@@ -20,6 +20,7 @@
 
 	<ItemGroup>
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
+		<PackageReference Include="System.Security.Principal.Windows" Version="5.0.0" />
 	</ItemGroup>
 
 </Project>
