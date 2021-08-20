@@ -33,7 +33,7 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: publish/win/KubeConnect.exe
-          asset_name: 'Windows Binary'
+          asset_name: 'KubeConnect.exe'
           tag: ${{ github.ref }}
           overwrite: true
       
