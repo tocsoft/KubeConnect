@@ -3,7 +3,7 @@ using System.Security.Principal;
 
 namespace KubeConnect
 {
-    static class RootChecker
+    internal static class RootChecker
     {
         [DllImport("libc")]
         public static extern uint geteuid();

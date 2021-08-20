@@ -1,10 +1,13 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace KubeConnect
 {
+
 #pragma warning disable SA1121 // Use built-in type alias
     /// <summary>
     /// Allows processes to be automatically killed if this parent process unexpectedly quits.

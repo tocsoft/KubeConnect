@@ -1,8 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -43,8 +40,8 @@ namespace KubeConnect
                 EnableRaisingEvents = true
             };
 
-            var standardOutputResults = new TaskCompletionSource();
-            var standardErrorResults = new TaskCompletionSource();
+            var standardOutputResults = new TaskCompletionSource<object>();
+            var standardErrorResults = new TaskCompletionSource<object>();
             if (readingOut)
             {
                 process.OutputDataReceived += (sender, args) =>
@@ -54,11 +51,11 @@ namespace KubeConnect
                         if (args.Data != null)
                             writeStandardOutput?.Invoke(args.Data);
                         else
-                            standardOutputResults.TrySetResult();
+                            standardOutputResults.TrySetResult(null);
                     }
                     else
                     {
-                        standardOutputResults.TrySetResult();
+                        standardOutputResults.TrySetResult(null);
                     }
                 };
 
@@ -69,18 +66,18 @@ namespace KubeConnect
                         if (args.Data != null)
                             writeStandardError?.Invoke(args.Data);
                         else
-                            standardErrorResults.TrySetResult();
+                            standardErrorResults.TrySetResult(null);
                     }
                     else
                     {
-                        standardErrorResults.TrySetResult();
+                        standardErrorResults.TrySetResult(null);
                     }
                 };
             }
             else
             {
-                standardOutputResults.TrySetResult();
-                standardErrorResults.TrySetResult();
+                standardOutputResults.TrySetResult(null);
+                standardErrorResults.TrySetResult(null);
             }
 
             var processStartTime = new TaskCompletionSource<DateTime>();
@@ -147,20 +144,5 @@ namespace KubeConnect
                 return await tcs.Task.ConfigureAwait(false);
             }
         }
-    }
-
-    public sealed class ProcessResults : IDisposable
-    {
-        public ProcessResults(Process process, DateTime processStartTime)
-        {
-            Process = process;
-            ExitCode = process.ExitCode;
-            RunTime = process.ExitTime - processStartTime;
-        }
-
-        public Process Process { get; }
-        public int ExitCode { get; }
-        public TimeSpan RunTime { get; }
-        public void Dispose() { Process.Dispose(); }
     }
 }
