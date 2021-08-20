@@ -16,7 +16,13 @@ namespace KubeConnect
             get
             {
                 Assembly assembly = Assembly.GetExecutingAssembly();
-                return assembly.GetName().Version.ToString();
+                var version = assembly.GetCustomAttributesData()
+                    .Where(x => x.AttributeType == typeof(AssemblyInformationalVersionAttribute))
+                    .Select(x => x.ConstructorArguments[0].Value?.ToString())
+                    .FirstOrDefault();
+
+
+                return version ?? assembly.GetName().Version.ToString();
             }
         }
 
@@ -77,6 +83,8 @@ Version {CurrentVersion}
             var cts = new CancellationTokenSource();
             console.CancelKeyPress += delegate
             {
+                console.WriteLine("Shutting down");
+
                 cts.Cancel();
             };
 

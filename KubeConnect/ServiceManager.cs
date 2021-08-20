@@ -29,6 +29,12 @@ namespace KubeConnect
         private Dictionary<string, IPAddress> serviceIpAddressLookup = new Dictionary<string, IPAddress>(StringComparer.OrdinalIgnoreCase);
         public async Task RunPortForwardingAsync(CancellationToken cancellationToken)
         {
+            var tcs = new TaskCompletionSource();
+            cancellationToken.Register(() =>
+            {
+                tcs.TrySetResult();
+            });
+
             var serviceList = await kubernetesClient.ListNamespacedServiceAsync(@namespace);
 
             // assign IP Addresses
@@ -45,10 +51,24 @@ namespace KubeConnect
             List<Task> forwards = new List<Task>();
             foreach (var s in serviceList.Items)
             {
-                forwards.Add(Forward(s, serviceIpAddressLookup[s.Name()], cancellationToken));
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    forwards.Add(Forward(s, serviceIpAddressLookup[s.Name()], cancellationToken));
+                }
             }
-            console.WriteLine("All services now listening");
-            await Task.WhenAll(forwards);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                console.WriteLine("All services now listening");
+                try
+                {
+                    var r = Task.WhenAll(forwards);
+                    await Task.WhenAny(tcs.Task, r);
+                }
+                catch
+                {
+
+                }
+            }
 
             // cleanup IP addresses (update hosts file)
             console.WriteLine("Cleaning up HOSTS file - removing services");
@@ -145,6 +165,12 @@ namespace KubeConnect
             listener.Bind(localEndPoint);
             listener.Listen(100);
 
+            using var r = cancellationToken.Register(() =>
+            {
+                listener.Shutdown(SocketShutdown.Both);
+                listener.Close();
+                listener.Dispose();
+            });
 
             int connectionId = 0;
             async Task HandleConnection(Socket handler)
@@ -161,24 +187,31 @@ namespace KubeConnect
                 var pod = pods.Items[0];
 
                 var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), service.Namespace(), new int[] { port.Port }, "v4.channel.k8s.io");
+
                 var demux = new StreamDemuxer(webSocket, StreamType.PortForward);
                 demux.Start();
 
                 var stream = demux.GetStream((byte?)0, (byte?)0);
+
+                using var r1 = cancellationToken.Register(() =>
+                {
+                    stream.Close();
+                    demux.Dispose();
+                });
 
                 var copy = Task.Run(() =>
                 {
                     try
                     {
                         var buff = new byte[4096];
-                        while (!cancellationToken.IsCancellationRequested)
+                        while (!cancellationToken.IsCancellationRequested && handler.Connected)
                         {
                             if (handler == null) continue;
                             var read = stream.Read(buff, 0, 4096);
-                            handler.Send(buff, read, 0);
+                            handler.Send(buff, 0, read, SocketFlags.None);
                         }
                     }
-                    catch
+                    finally
                     {
                         stream.Close();
                         handler?.Close();
@@ -190,9 +223,9 @@ namespace KubeConnect
                     try
                     {
                         var bytes = new byte[4096];
-                        while (!cancellationToken.IsCancellationRequested)
+                        while (!cancellationToken.IsCancellationRequested && handler.Connected)
                         {
-                            int bytesRec = handler.Receive(bytes);
+                            int bytesRec = handler.Receive(bytes, 4096, SocketFlags.None);
                             stream.Write(bytes, 0, bytesRec);
                             if (bytesRec == 0 || Encoding.ASCII.GetString(bytes, 0, bytesRec).IndexOf("<EOF>") > -1)
                             {
@@ -200,7 +233,7 @@ namespace KubeConnect
                             }
                         }
                     }
-                    catch
+                    finally
                     {
                         stream.Close();
                         handler?.Close();
@@ -214,20 +247,13 @@ namespace KubeConnect
                 console.WriteLine($"[{connectionId}] {service.Name()}:{port.Port} : closed");
             }
 
-            var r = cancellationToken.Register(() =>
-            {
-                listener.Shutdown(SocketShutdown.Both);
-            });
 
-            using (r)
-            {
 
-                while (!cancellationToken.IsCancellationRequested)
-                {
-                    var handler = listener.Accept();
-                    // TODO for this port and IP/service name we should try and discover the 'best' pod to connect to.
-                    _ = HandleConnection(handler); // process connection in own task
-                }
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                var handler = listener.Accept();
+                // TODO for this port and IP/service name we should try and discover the 'best' pod to connect to.
+                _ = HandleConnection(handler); // process connection in own task
             }
 
             listener.Close();
