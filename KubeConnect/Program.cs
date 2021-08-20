@@ -95,8 +95,13 @@ Version {CurrentVersion}
             var currentNamespace = config.Namespace ?? "default";
 
             var manager = new ServiceManager(client, currentNamespace, console);
-            manager.RunPortForwardingAsync(cts.Token).GetAwaiter().GetResult();
+            cts.Token.Register(() =>
+            {
+                manager.Cleanup();
+            });
 
+            manager.RunPortForwardingAsync(cts.Token).GetAwaiter().GetResult();
+            manager.Cleanup();
             return 0;
         }
 

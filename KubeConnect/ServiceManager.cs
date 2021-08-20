@@ -71,6 +71,14 @@ namespace KubeConnect
             }
 
             // cleanup IP addresses (update hosts file)
+            Cleanup();
+        }
+        bool cleaned = false;
+        public void Cleanup()
+        {
+            if (cleaned) return;
+            cleaned = true;
+
             console.WriteLine("Cleaning up HOSTS file - removing services");
             WriteHostsFile(serviceIpAddressLookup, false);
         }
@@ -137,24 +145,24 @@ namespace KubeConnect
 
         private async Task Forward(V1Service service, IPAddress ipAddress, CancellationToken cancellationToken)
         {
-            while (!cancellationToken.IsCancellationRequested)
+            List<Task> tasks = new List<Task>();
+
+            // foreach port on the service
+            foreach (var p in service.Spec.Ports)
             {
-                List<Task> tasks = new List<Task>();
+                if (cancellationToken.IsCancellationRequested) return;
 
-                // foreach port on the service
-                foreach (var p in service.Spec.Ports)
-                {
-                    var task = ForwardPort(service, p, ipAddress, cancellationToken);
-                    tasks.Add(task);
-                }
-
-                await Task.WhenAll(tasks);
+                var task = ForwardPort(service, p, ipAddress, cancellationToken);
+                tasks.Add(task);
             }
+
+            await Task.WhenAll(tasks);
         }
 
         private async Task ForwardPort(V1Service service, V1ServicePort port, IPAddress ipAddress, CancellationToken cancellationToken)
         {
             await Task.Yield();
+            if (cancellationToken.IsCancellationRequested) return;
 
             var targetPort = int.Parse(port.TargetPort?.Value ?? port.Port.ToString());
             IPEndPoint localEndPoint = new IPEndPoint(ipAddress, targetPort);
