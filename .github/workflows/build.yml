@@ -36,3 +36,10 @@ jobs:
           asset_name: 'Windows Binary'
           tag: ${{ github.ref }}
           overwrite: true
+      
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: windows-binary
+          file: publish/win/KubeConnect.exe
+          retention-days: 1
