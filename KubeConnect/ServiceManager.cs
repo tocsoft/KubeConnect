@@ -18,39 +18,37 @@ namespace KubeConnect
         private readonly IKubernetes kubernetesClient;
         private readonly string @namespace;
         private readonly IConsole console;
-        private readonly bool bindIngress;
+
         static string hostPath = null;
         private V1ServiceList serviceList;
         public V1IngressList IngressList { get; private set; }
         public IEnumerable<string> IngressHostNames => IngressList.Items.SelectMany(x => x.Spec.Rules).Select(x => x.Host).Distinct();
+        public bool HasIngressesDefined => IngressList.Items.Any();
 
         public IPAddress IngressIPAddress { get; } = IPAddress.Parse($"127.2.2.1");
 
-        public ServiceManager(IKubernetes kubernetesClient, string @namespace, IConsole console, bool bindIngress)
+        public ServiceManager(IKubernetes kubernetesClient, string @namespace, IConsole console)
         {
             this.kubernetesClient = kubernetesClient;
             this.@namespace = @namespace;
             this.console = console;
-            this.bindIngress = bindIngress;
         }
 
 
         public async Task LoadBindings()
         {
             serviceList = await kubernetesClient.ListNamespacedServiceAsync(@namespace);
-            if (bindIngress)
-            {
-                // discover ingresses details here too as we need to allocate the ingress hosts against an IP address (which we have to then bind to in kestral
-                IngressList = await kubernetesClient.ListNamespacedIngressAsync(@namespace);
+            // discover ingresses details here too as we need to allocate the ingress hosts against an IP address (which we have to then bind to in kestral
+            IngressList = await kubernetesClient.ListNamespacedIngressAsync(@namespace);
 
-                foreach (var ingress in IngressList.Items)
+            foreach (var ingress in IngressList.Items)
+            {
+                foreach (var r in ingress.Spec.Rules)
                 {
-                    foreach (var r in ingress.Spec.Rules)
-                    {
-                        serviceIpAddressLookup[r.Host] = IngressIPAddress;
-                    }
+                    serviceIpAddressLookup[r.Host] = IngressIPAddress;
                 }
             }
+
 
             // assign IP Addresses
             int ipCounter = 1;

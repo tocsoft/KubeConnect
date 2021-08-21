@@ -7,7 +7,6 @@ namespace KubeConnect
         Dictionary<string, string> shotNameMap = new Dictionary<string, string>()
         {
             ["n"] = "namespace",
-            ["i"] = "forward-ingresses",
             ["l"] = "launch",
             ["x"] = "context",
             ["m"] = "map",
@@ -28,7 +27,6 @@ namespace KubeConnect
             {
                 var a = args[i]?.ToLower();
                 string option = "";
-                string value = "";
                 if (a.StartsWith("-") || a.StartsWith("--"))
                 {
                     option = a.TrimStart('-');
@@ -68,9 +66,6 @@ namespace KubeConnect
                     case "namespace":
                         Namespace = argNext;
                         break;
-                    case "forward-ingresses":
-                        ForwardIngresses = true;
-                        break;
                     case "no-logo":
                         NoLogo = true;
                         break;
@@ -101,7 +96,6 @@ namespace KubeConnect
         public string KubeconfigFile { get; }
         public string Context { get; }
         public List<Mapping> Mappings { get; } = new List<Mapping>();
-        public bool ForwardIngresses { get; }
         public string ConsolePipeName { get; }
         public bool NoLogo { get; }
         public bool Elevated { get; }

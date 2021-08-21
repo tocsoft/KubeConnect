@@ -2,7 +2,7 @@
   "profiles": {
     "KubeConnect": {
       "commandName": "Project",
-      "commandLineArgs": "-i -l"
+      "commandLineArgs": "-l"
     }
   }
 }

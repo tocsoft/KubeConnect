@@ -97,7 +97,7 @@ Version {CurrentVersion}
 
             var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
 
-            var manager = new ServiceManager(client, currentNamespace, console, parseArgs.ForwardIngresses);
+            var manager = new ServiceManager(client, currentNamespace, console);
             cts.Token.Register(() =>
             {
                 manager.Cleanup();
@@ -109,7 +109,7 @@ Version {CurrentVersion}
             List<Task> tasks = new List<Task>();
             var portForwardingTask = manager.RunPortForwardingAsync(cts.Token);
             tasks.Add(portForwardingTask);
-            if (parseArgs.ForwardIngresses)
+            if (manager.HasIngressesDefined)
             {
                 var host = Ingress.HostBuilder.CreateHost(manager, console);
                 cts.Token.Register(() =>
