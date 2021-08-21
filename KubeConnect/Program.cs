@@ -1,5 +1,7 @@
 ﻿using k8s;
+using Microsoft.Extensions.Hosting;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -91,16 +93,45 @@ Version {CurrentVersion}
             var config = KubernetesClientConfiguration.BuildDefaultConfig();
             IKubernetes client = new Kubernetes(config);
             console.WriteLine("Starting port forward!");
+            parseArgs.Namespace ??= config.Namespace ?? "default";
 
-            var currentNamespace = config.Namespace ?? "default";
+            var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
 
-            var manager = new ServiceManager(client, currentNamespace, console);
+            var manager = new ServiceManager(client, currentNamespace, console, parseArgs.ForwardIngresses);
             cts.Token.Register(() =>
             {
                 manager.Cleanup();
             });
 
-            manager.RunPortForwardingAsync(cts.Token).GetAwaiter().GetResult();
+            // ensure we load up configs form k8s
+            manager.LoadBindings().GetAwaiter().GetResult();
+
+            List<Task> tasks = new List<Task>();
+            var portForwardingTask = manager.RunPortForwardingAsync(cts.Token);
+            tasks.Add(portForwardingTask);
+            if (parseArgs.ForwardIngresses)
+            {
+                var host = Ingress.HostBuilder.CreateHost(manager, console);
+                cts.Token.Register(() =>
+                {
+                    host.StopAsync().Wait();
+                });
+
+                var ingressRunnerTask = host.RunAsync(cts.Token);
+                tasks.Add(ingressRunnerTask);
+            }
+
+            if (parseArgs.LaunchBrowser)
+            {
+                var host = manager.IngressHostNames.FirstOrDefault();
+
+                if (host != null)
+                {
+                    OpenUrl($"https://{host}");
+                }
+            }
+            Task.WaitAny(tasks.ToArray());
+
             manager.Cleanup();
             return 0;
         }
@@ -163,6 +194,35 @@ Version {CurrentVersion}
                 console.WriteErrorLine("Error: must be ran as root, rerun the command via 'sudo'");
             }
             return -1;
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(url);
+            }
+            catch
+            {
+                // hack because of this: https://github.com/dotnet/corefx/issues/10361
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    url = url.Replace("&", "^&");
+                    Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    Process.Start("xdg-open", url);
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    Process.Start("open", url);
+                }
+                else
+                {
+                    throw;
+                }
+            }
         }
     }
 }

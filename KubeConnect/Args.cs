@@ -8,6 +8,7 @@ namespace KubeConnect
         {
             ["n"] = "namespace",
             ["i"] = "forward-ingresses",
+            ["l"] = "launch",
             ["x"] = "context",
             ["m"] = "map",
         };
@@ -61,6 +62,9 @@ namespace KubeConnect
                 // clean up argNext is required???
                 switch (option)
                 {
+                    case "launch":
+                        LaunchBrowser = true;
+                        break;
                     case "namespace":
                         Namespace = argNext;
                         break;
@@ -93,7 +97,7 @@ namespace KubeConnect
             }
         }
 
-        public string Namespace { get; }
+        public string Namespace { get; set; }
         public string KubeconfigFile { get; }
         public string Context { get; }
         public List<Mapping> Mappings { get; } = new List<Mapping>();
@@ -102,6 +106,7 @@ namespace KubeConnect
         public bool NoLogo { get; }
         public bool Elevated { get; }
         public bool AttachDebugger { get; }
+        public bool LaunchBrowser { get; } = false;
 
         public class Mapping
         {
