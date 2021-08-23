@@ -15,12 +15,13 @@
   		<RollForward>LatestMajor</RollForward>
 	</PropertyGroup>
 
-	<PropertyGroup Condition="'$(Configuration)'=='Release'">
-		<!-- <PublishTrimmed>true</PublishTrimmed> -->
-		<!-- <PublishSingleFile>true</PublishSingleFile> -->
-		<SelfContained>false</SelfContained>
+	<PropertyGroup Condition="'$(SelfContained)'=='true'">
+		<PublishTrimmed>true</PublishTrimmed>
+		<PublishSingleFile>true</PublishSingleFile>
+		<SelfContained>true</SelfContained>
 		<!-- <TrimMode>Link</TrimMode> -->
-		<!-- <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract> -->
+		<TrimMode>copyused</TrimMode>
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract> 
 		<IncludeSymbols>false</IncludeSymbols>
 		<EmbedUntrackedSources>false</EmbedUntrackedSources>
 	</PropertyGroup>
