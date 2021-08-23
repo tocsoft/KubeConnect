@@ -55,7 +55,7 @@ namespace KubeConnect.Ingress
 
         private static X509Certificate2 GetSigningAuthority()
         {
-            X509Certificate2 certificate = null;
+            X509Certificate2? certificate = null;
             bool inStore = false;
             // if windows load from cert store and return
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -105,7 +105,7 @@ namespace KubeConnect.Ingress
                   DateTimeOffset.UtcNow.AddDays(-45),
                   DateTimeOffset.UtcNow.AddDays(365));
 
-                var newCert = new X509Certificate2(certificate.Export(X509ContentType.Pkcs12), (string)null, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+                var newCert = new X509Certificate2(certificate.Export(X509ContentType.Pkcs12), string.Empty, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
 
                 certificate = newCert;
                 if (!inStore)
@@ -124,7 +124,10 @@ namespace KubeConnect.Ingress
                     else
                     {
                         var dir = Path.GetDirectoryName(rootCertificatePath);
-                        Directory.CreateDirectory(dir);
+                        if (dir != null)
+                        {
+                            Directory.CreateDirectory(dir);
+                        }
 
                         File.WriteAllBytes(rootCertificatePath, certificate.Export(X509ContentType.Pfx));
                     }
@@ -179,7 +182,7 @@ namespace KubeConnect.Ingress
                         DateTimeOffset.UtcNow.AddDays(90),
                         new byte[] { 1, 2, 3, 4 });
 
-            var newCert = new X509Certificate2(cert.CopyWithPrivateKey(rsa).Export(X509ContentType.Pkcs12), (string)null, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+            var newCert = new X509Certificate2(cert.CopyWithPrivateKey(rsa).Export(X509ContentType.Pkcs12), string.Empty, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
 
             return newCert;
         }
@@ -209,7 +212,8 @@ namespace KubeConnect.Ingress
 
         public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
         {
-            if (IsEnabled(logLevel)){
+            if (IsEnabled(logLevel))
+            {
                 console.WriteLine(formatter(state, exception));
             }
         }

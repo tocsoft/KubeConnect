@@ -50,7 +50,7 @@ namespace KubeConnect
     public class ConsoleWrapper : IConsole
     {
         object locker = new object();
-        private event ConsoleCancelEventHandler _cancelKeyPress;
+        private event ConsoleCancelEventHandler? _cancelKeyPress;
         public event ConsoleCancelEventHandler CancelKeyPress
         {
             add
@@ -65,7 +65,7 @@ namespace KubeConnect
             }
         }
 
-        private void listener(object sender, ConsoleCancelEventArgs e)
+        private void listener(object? sender, ConsoleCancelEventArgs e)
         {
             e.Cancel = true;
             Task.Run(() =>
@@ -142,7 +142,7 @@ namespace KubeConnect
             });
         }
 
-        public event ConsoleCancelEventHandler CancelKeyPress;
+        public event ConsoleCancelEventHandler? CancelKeyPress;
 
         public void Dispose()
         {

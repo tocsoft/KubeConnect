@@ -13,7 +13,7 @@
 		<TargetFrameworks>netcoreapp3.1;net5.0</TargetFrameworks>
     <RootNamespace>k8s</RootNamespace>
     <SignAssembly>true</SignAssembly>
-    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
   
     <!-- Publish the repository URL in the built .nupkg (in the NuSpec <Repository> element) -->
     <PublishRepositoryUrl>true</PublishRepositoryUrl>

@@ -13,6 +13,7 @@
 		<IsPackable>true</IsPackable>
 		<LangVersion>latest</LangVersion>
   		<RollForward>LatestMajor</RollForward>
+  		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(SelfContained)'=='true'">

@@ -2,6 +2,7 @@
 using k8s.Models;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -19,11 +20,12 @@ namespace KubeConnect
         private readonly string @namespace;
         private readonly IConsole console;
 
-        static string hostPath = null;
-        private V1ServiceList serviceList;
-        public V1IngressList IngressList { get; private set; }
-        public IEnumerable<string> IngressHostNames => IngressList.Items.SelectMany(x => x.Spec.Rules).Select(x => x.Host).Distinct();
-        public bool HasIngressesDefined => IngressList.Items.Any();
+
+        private V1ServiceList? serviceList;
+        public V1IngressList? ingressList;
+        public IEnumerable<V1Ingress> IngressList => ingressList?.Items ?? Enumerable.Empty<V1Ingress>();
+        public IEnumerable<string> IngressHostNames => IngressList?.SelectMany(x => x.Spec.Rules).Select(x => x.Host).Distinct() ?? Enumerable.Empty<string>();
+        public bool HasIngressesDefined => IngressList?.Any() == true;
 
         public IPAddress IngressIPAddress { get; } = IPAddress.Parse($"127.2.2.1");
 
@@ -34,14 +36,23 @@ namespace KubeConnect
             this.console = console;
         }
 
+        static string hostPath;
+        static ServiceManager()
+        {
+            hostPath = "/etc/hosts";
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                hostPath = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\drivers\etc\hosts");
+            }
+        }
 
         public async Task LoadBindings()
         {
             serviceList = await kubernetesClient.ListNamespacedServiceAsync(@namespace);
             // discover ingresses details here too as we need to allocate the ingress hosts against an IP address (which we have to then bind to in kestral
-            IngressList = await kubernetesClient.ListNamespacedIngressAsync(@namespace);
+            ingressList = await kubernetesClient.ListNamespacedIngressAsync(@namespace);
 
-            foreach (var ingress in IngressList.Items)
+            foreach (var ingress in IngressList)
             {
                 foreach (var r in ingress.Spec.Rules)
                 {
@@ -61,10 +72,16 @@ namespace KubeConnect
         private Dictionary<string, IPAddress> serviceIpAddressLookup = new Dictionary<string, IPAddress>(StringComparer.OrdinalIgnoreCase);
         public async Task RunPortForwardingAsync(CancellationToken cancellationToken)
         {
+            if (serviceList == null)
+            {
+                await LoadBindings();
+            }
+            Debug.Assert(serviceList != null);
+
             var tcs = new TaskCompletionSource<object>();
             cancellationToken.Register(() =>
             {
-                tcs.TrySetResult(null);
+                tcs.TrySetResult(null!);
             });
 
             // update hosts file
@@ -109,23 +126,11 @@ namespace KubeConnect
         }
 
 
-        public static string HostFilePath()
-        {
-            if (hostPath == null)
-            {
-                hostPath = "/etc/hosts";
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    hostPath = Environment.ExpandEnvironmentVariables(@"%SystemRoot%\System32\drivers\etc\hosts");
-                }
-            }
 
-            return hostPath;
-        }
 
         public static void WriteHostsFile(Dictionary<string, IPAddress> lookup, bool writeIpAddresses)
         {
-            using (var fs = File.Open(HostFilePath(), FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
+            using (var fs = File.Open(hostPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
             using (var sr = new StreamReader(fs, leaveOpen: true))
             {
                 var dnsNames = lookup.ToDictionary(X => $" {X.Key}", x => x.Value.ToString());
@@ -157,7 +162,7 @@ namespace KubeConnect
         public static StringBuilder ReadWithoutServices(StreamReader reader, IEnumerable<string> hosts)
         {
             StringBuilder sb = new StringBuilder();
-            string line;
+            string? line;
             while ((line = reader.ReadLine()) != null)
             {
                 if (!hosts.Any(s => line.Contains(s, StringComparison.OrdinalIgnoreCase)))
@@ -239,7 +244,6 @@ namespace KubeConnect
                         var buff = new byte[4096];
                         while (!cancellationToken.IsCancellationRequested && handler.Connected)
                         {
-                            if (handler == null) continue;
                             var read = stream.Read(buff, 0, 4096);
                             handler.Send(buff, 0, read, SocketFlags.None);
                         }
@@ -291,10 +295,5 @@ namespace KubeConnect
 
             listener.Close();
         }
-    }
-
-    public class IngressConfig
-    {
-
     }
 }

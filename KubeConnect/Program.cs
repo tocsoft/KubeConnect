@@ -24,7 +24,7 @@ namespace KubeConnect
                     .FirstOrDefault();
 
 
-                return version ?? assembly.GetName().Version.ToString();
+                return version ?? assembly.GetName().Version?.ToString() ?? string.Empty;
             }
         }
 
@@ -48,7 +48,7 @@ namespace KubeConnect
                     }
                 }
 
-                return url;
+                return url ?? string.Empty;
             }
         }
 
@@ -163,7 +163,12 @@ Version {CurrentVersion}
                 };
                 _ = forwarder.Listen(cts.Token);
 
-                var exeToRun = Process.GetCurrentProcess().MainModule.FileName;
+                var exeToRun = Process.GetCurrentProcess()?.MainModule?.FileName;
+                if (exeToRun == null)
+                {
+                    throw new InvalidProgramException("can't find exe to elevate");
+                }
+
                 var info = new ProcessStartInfo(exeToRun, commandline)
                 {
                     Verb = "runas",

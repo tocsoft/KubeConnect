@@ -51,11 +51,11 @@ namespace KubeConnect
                         if (args.Data != null)
                             writeStandardOutput?.Invoke(args.Data);
                         else
-                            standardOutputResults.TrySetResult(null);
+                            standardOutputResults.TrySetResult(null!);
                     }
                     else
                     {
-                        standardOutputResults.TrySetResult(null);
+                        standardOutputResults.TrySetResult(null!);
                     }
                 };
 
@@ -66,18 +66,18 @@ namespace KubeConnect
                         if (args.Data != null)
                             writeStandardError?.Invoke(args.Data);
                         else
-                            standardErrorResults.TrySetResult(null);
+                            standardErrorResults.TrySetResult(null!);
                     }
                     else
                     {
-                        standardErrorResults.TrySetResult(null);
+                        standardErrorResults.TrySetResult(null!);
                     }
                 };
             }
             else
             {
-                standardOutputResults.TrySetResult(null);
-                standardErrorResults.TrySetResult(null);
+                standardOutputResults.TrySetResult(null!);
+                standardErrorResults.TrySetResult(null!);
             }
 
             var processStartTime = new TaskCompletionSource<DateTime>();

@@ -22,7 +22,7 @@ namespace KubeConnect.Ingress
             var routes = new List<RouteConfig>();
             var clusters = new List<ClusterConfig>();
 
-            foreach (var ingress in manager.IngressList.Items)
+            foreach (var ingress in manager.IngressList)
             {
                 foreach (var r in ingress.Spec.Rules)
                 {

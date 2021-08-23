@@ -26,6 +26,11 @@ namespace KubeConnect
             for (var i = 0; i < args.Length; i++)
             {
                 var a = args[i]?.ToLower();
+                if (a == null)
+                {
+                    continue;
+                }
+
                 string option = "";
                 if (a.StartsWith("-") || a.StartsWith("--"))
                 {
@@ -92,11 +97,11 @@ namespace KubeConnect
             }
         }
 
-        public string Namespace { get; set; }
-        public string KubeconfigFile { get; }
-        public string Context { get; }
+        public string? Namespace { get; set; }
+        public string? KubeconfigFile { get; }
+        public string? Context { get; }
         public List<Mapping> Mappings { get; } = new List<Mapping>();
-        public string ConsolePipeName { get; }
+        public string? ConsolePipeName { get; }
         public bool NoLogo { get; }
         public bool Elevated { get; }
         public bool AttachDebugger { get; }
@@ -111,7 +116,7 @@ namespace KubeConnect
                 this.v = v;
             }
 
-            public string ServiceName { get; set; }
+            public string ServiceName { get; set; } = string.Empty;
             public int LocalPort { get; set; }
             public int RemotePort { get; set; }
         }
