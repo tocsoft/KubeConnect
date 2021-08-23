@@ -36,10 +36,17 @@ jobs:
           asset_name: 'KubeConnect.exe'
           tag: ${{ github.ref }}
           overwrite: true
-      
+
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v2
         with:
           name: windows-binary
           path: publish/win/KubeConnect.exe
+          retention-days: 1
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v2
+        with:
+          name: dotnet-tool-pacakge
+          path: publish/tool/*.nupkg
           retention-days: 1

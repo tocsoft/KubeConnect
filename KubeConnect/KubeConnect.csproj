@@ -2,18 +2,23 @@
 
 	<PropertyGroup>
 		<OutputType>Exe</OutputType>
-		<TargetFramework>net5.0</TargetFramework>
+		<TargetFrameworks>netcoreapp3.1;net5.0</TargetFrameworks
 		<Company>Tocsoft</Company>
 		<Authors>Tocsoft</Authors>
 		<PublishRepositoryUrl>true</PublishRepositoryUrl>
+		<PackAsTool>true</PackAsTool>
+		<ToolCommandName>kubeconnect</ToolCommandName>
+		<PackageOutputPath>./nupkg</PackageOutputPath>
+		<PackageId>Tocsoft.KubeConnect.Tool</PackageId>
+		<IsPackable>true</IsPackable> 
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)'=='Release'">
-		<RuntimeIdentifiers>win10-x64;linux-x64</RuntimeIdentifiers>
-		<PublishTrimmed>true</PublishTrimmed>
-		<PublishSingleFile>true</PublishSingleFile>
-		<TrimMode>Link</TrimMode>
-		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+		<!-- <PublishTrimmed>true</PublishTrimmed> -->
+		<!-- <PublishSingleFile>true</PublishSingleFile> -->
+		<SelfContained>false</SelfContained>
+		<!-- <TrimMode>Link</TrimMode> -->
+		<!-- <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract> -->
 		<IncludeSymbols>false</IncludeSymbols>
 		<EmbedUntrackedSources>false</EmbedUntrackedSources>
 	</PropertyGroup>
