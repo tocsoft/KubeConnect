@@ -61,10 +61,10 @@ namespace KubeConnect
         private Dictionary<string, IPAddress> serviceIpAddressLookup = new Dictionary<string, IPAddress>(StringComparer.OrdinalIgnoreCase);
         public async Task RunPortForwardingAsync(CancellationToken cancellationToken)
         {
-            var tcs = new TaskCompletionSource();
+            var tcs = new TaskCompletionSource<object>();
             cancellationToken.Register(() =>
             {
-                tcs.TrySetResult();
+                tcs.TrySetResult(null);
             });
 
             // update hosts file
