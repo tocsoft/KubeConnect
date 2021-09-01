@@ -5,7 +5,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-namespace KubeConnect
+namespace KubeConnect.RunAdminProcess
 {
 
 #pragma warning disable SA1121 // Use built-in type alias

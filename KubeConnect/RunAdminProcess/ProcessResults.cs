@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 
-namespace KubeConnect
+namespace KubeConnect.RunAdminProcess
 {
     public sealed class ProcessResults : IDisposable
     {

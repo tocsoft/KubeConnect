@@ -1,7 +1,7 @@
 ﻿using System.Runtime.InteropServices;
 using System.Security.Principal;
 
-namespace KubeConnect
+namespace KubeConnect.RunAdminProcess
 {
     internal static class RootChecker
     {

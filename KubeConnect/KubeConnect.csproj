@@ -34,6 +34,7 @@
 		  <PrivateAssets>all</PrivateAssets>
 		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
+		<PackageReference Include="PipeMessenger" Version="0.9.3" />
 		<PackageReference Include="Yarp.ReverseProxy" Version="1.0.0-preview.12.21328.2" />
 	</ItemGroup>
 
