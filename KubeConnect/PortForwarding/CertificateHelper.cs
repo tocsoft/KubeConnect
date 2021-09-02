@@ -1,56 +1,16 @@
-﻿using k8s;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
-using System.Threading;
 using System.Threading.Tasks;
-using Microsoft.Extensions.Logging;
 
-namespace KubeConnect.Ingress
+namespace KubeConnect.PortForwarding
 {
-    public static class HostBuilder
+    public static class CertificateHelper
     {
-        public static IHost CreateHost(ServiceManager manager, IConsole console)
-        {
-            return CreateHostBuilder(manager, console).Build();//.RunAsync(cancellationToken);
-        }
-
-        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console) =>
-            Host.CreateDefaultBuilder(Array.Empty<string>())
-                .ConfigureLogging((s, o) =>
-                {
-                    o.ClearProviders();
-                    o.Services.AddSingleton<ILoggerProvider, IConsoleLogProvider>();
-                })
-                .ConfigureServices(services =>
-                {
-                    services.AddSingleton(manager);
-                    services.AddSingleton(console);
-                })
-                .ConfigureWebHostDefaults(webBuilder =>
-                {
-                    webBuilder.ConfigureKestrel(serverOptions =>
-                    {
-                        serverOptions.ConfigureHttpsDefaults(opts =>
-                        {
-                            opts.ServerCertificate = CreateCertificate(manager.IngressHostNames);
-                        });
-                    });
-
-                    webBuilder.UseUrls($"http://{manager.IngressIPAddress}", $"https://{manager.IngressIPAddress}");
-
-                    webBuilder.UseStartup<Startup>();
-                });
-
         private const string autorityName = "KubeConnect Issuing Authority";
 
         private static X509Certificate2 GetSigningAuthority()
@@ -137,7 +97,7 @@ namespace KubeConnect.Ingress
             return certificate;
         }
 
-        private static X509Certificate2 CreateCertificate(IEnumerable<string> hosts)
+        public static X509Certificate2 CreateCertificate(IEnumerable<string> hosts)
         {
             using var parentCert = GetSigningAuthority();
 
@@ -185,37 +145,6 @@ namespace KubeConnect.Ingress
             var newCert = new X509Certificate2(cert.CopyWithPrivateKey(rsa).Export(X509ContentType.Pkcs12), string.Empty, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
 
             return newCert;
-        }
-    }
-
-    public class IConsoleLogProvider : ILoggerProvider, ILogger
-    {
-        private readonly IConsole console;
-
-        public IConsoleLogProvider(IConsole console)
-        {
-            this.console = console;
-        }
-
-        public IDisposable BeginScope<TState>(TState state)
-            => this;
-
-        public ILogger CreateLogger(string categoryName)
-            => this;
-
-        public void Dispose()
-        {
-        }
-
-        public bool IsEnabled(LogLevel logLevel)
-            => logLevel >= LogLevel.Warning;
-
-        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception exception, Func<TState, Exception, string> formatter)
-        {
-            if (IsEnabled(logLevel))
-            {
-                console.WriteLine(formatter(state, exception));
-            }
         }
     }
 }

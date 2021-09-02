@@ -1,5 +1,9 @@
 ﻿using k8s;
+using KubeConnect.RunAdminProcess;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -52,18 +56,24 @@ namespace KubeConnect
             }
         }
 
-        private static int Main(string[] args)
+        private static async Task<int> Main(string[] args)
         {
             var parseArgs = new Args(args);
             if (parseArgs.AttachDebugger)
             {
                 Debugger.Launch();
             }
-            IConsole console = new ConsoleWrapper();
+            
+            IConsole console;
             if (!string.IsNullOrWhiteSpace(parseArgs.ConsolePipeName))
             {
-                console = new PipeConsoleWriter(parseArgs.ConsolePipeName);
+                console = new IPCServiceConsole(parseArgs.ConsolePipeName);
             }
+            else
+            {
+                 console = ConsoleWrapper.Instance;
+            }
+
             if (!parseArgs.NoLogo)
             {
                 console.WriteLine($@"
@@ -79,16 +89,10 @@ Version {CurrentVersion}
 
             if (!RootChecker.IsRoot())
             {
-                return RunProcessAsAdmin(parseArgs, console).GetAwaiter().GetResult();
+                return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
             }
 
             var cts = new CancellationTokenSource();
-            console.CancelKeyPress += delegate
-            {
-                console.WriteLine("Shutting down");
-
-                cts.Cancel();
-            };
 
             var config = KubernetesClientConfiguration.BuildDefaultConfig();
             IKubernetes client = new Kubernetes(config);
@@ -98,108 +102,58 @@ Version {CurrentVersion}
             var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
 
             var manager = new ServiceManager(client, currentNamespace, console);
-            cts.Token.Register(() =>
-            {
-                manager.Cleanup();
-            });
-
             // ensure we load up configs form k8s
-            manager.LoadBindings().GetAwaiter().GetResult();
+            await manager.LoadBindings();
 
-            List<Task> tasks = new List<Task>();
-            var portForwardingTask = manager.RunPortForwardingAsync(cts.Token);
-            tasks.Add(portForwardingTask);
-            if (manager.HasIngressesDefined)
-            {
-                var host = Ingress.HostBuilder.CreateHost(manager, console);
-                cts.Token.Register(() =>
-                {
-                    host.StopAsync().Wait();
-                });
+            var serverHost = CreateHostBuilder(manager, console, client).Build();
 
-                var ingressRunnerTask = host.RunAsync(cts.Token);
-                tasks.Add(ingressRunnerTask);
-            }
-
+            var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
             if (parseArgs.LaunchBrowser)
             {
-                var host = manager.IngressHostNames.FirstOrDefault();
-
-                if (host != null)
+                lifetime.ApplicationStarted.Register(() =>
                 {
-                    OpenUrl($"https://{host}");
-                }
-            }
-            Task.WaitAny(tasks.ToArray());
+                    var host = manager.IngressHostNames.FirstOrDefault();
 
-            manager.Cleanup();
+                    if (host != null)
+                    {
+                        OpenUrl($"https://{host}");
+                    }
+                });
+            }
+
+            console.CancelKeyPress += delegate
+            {
+                console.WriteLine("Shutting down!");
+                cts.Cancel();
+                _ = serverHost.StopAsync();
+            };
+            await serverHost.RunAsync(cts.Token);
+
             return 0;
         }
 
-        private static async Task<int> RunProcessAsAdmin(Args parseArgs, IConsole console)
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                if (parseArgs.Elevated)
+        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes) =>
+            Host.CreateDefaultBuilder(Array.Empty<string>())
+                .ConfigureLogging((s, o) =>
                 {
-                    // this should already be elevated, guess if we are not somethign went wrong and we should probably tell them to use an admin prompt
-                    console.WriteErrorLine("Error: must be ran from an administrator command prompt");
-                    return -1;
-                }
-                var forwarder = new PipeConsoleForwarder(console);
-                var commandline = $" --elevated-command {forwarder.PipeName} ";
-                if (Debugger.IsAttached)
+                    o.ClearProviders();
+                    o.Services.AddSingleton<ILoggerProvider, IConsoleLogProvider>();
+                })
+                .ConfigureServices(services =>
                 {
-                    commandline += "--attach-debugger ";
-                }
-
-                commandline += Environment.CommandLine;
-
-                var cts = new CancellationTokenSource();
-
-                Console.CancelKeyPress += delegate
+                    services.AddSingleton(kubernetes);
+                    services.AddSingleton(manager);
+                    services.AddSingleton(console);
+                    services.AddPortForwarder();
+                    services.AddHostedService<HostsFileUpdater>();
+                })
+                .ConfigureWebHostDefaults(webBuilder =>
                 {
-                    cts.Cancel();
-                };
-                _ = forwarder.Listen(cts.Token);
+                    webBuilder.PreferHostingUrls(false);
+                    webBuilder.UseUrls(Array.Empty<string>());
 
-                var exeToRun = Process.GetCurrentProcess()?.MainModule?.FileName;
-                if (exeToRun == null)
-                {
-                    throw new InvalidProgramException("can't find exe to elevate");
-                }
-
-                var info = new ProcessStartInfo(exeToRun, commandline)
-                {
-                    Verb = "runas",
-                    CreateNoWindow = true,
-                    WindowStyle = ProcessWindowStyle.Hidden,
-                };
-
-                // we want a chance for the process to shutdown gracefully before we kill it
-                var processCts = new CancellationTokenSource();
-                cts.Token.Register(() =>
-                {
-                    processCts.CancelAfter(10000);// give process 10 seconds to cancels after cancerlatino is triggered via listener
+                    webBuilder.UseStartup<Startup>();
                 });
-
-
-                var resTask = ProcessRunner.RunAsync(info,
-                    console.WriteLine,
-                    console.WriteErrorLine,
-                processCts.Token);
-
-                var res = await resTask;
-
-                Environment.Exit(res.ExitCode);
-                return res.ExitCode;
-            }
-            else
-            {
-                console.WriteErrorLine("Error: must be ran as root, rerun the command via 'sudo'");
-            }
-            return -1;
-        }
 
         private static void OpenUrl(string url)
         {

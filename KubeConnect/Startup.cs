@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Builder;
+﻿using KubeConnect.Ingress;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Yarp.ReverseProxy.Configuration;
 
-namespace KubeConnect.Ingress
+namespace KubeConnect
 {
     public class Startup
     {
