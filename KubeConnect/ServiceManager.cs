@@ -27,6 +27,26 @@ namespace KubeConnect
 
         public IEnumerable<V1Ingress> IngressList => ingressList?.Items ?? Enumerable.Empty<V1Ingress>();
         public IEnumerable<string> IngressHostNames => IngressList?.SelectMany(x => x.Spec.Rules).Select(x => x.Host).Distinct() ?? Enumerable.Empty<string>();
+
+        public IEnumerable<string> IngressAddresses
+        {
+            get
+            {
+                foreach (var ingress in IngressList)
+                {
+                    foreach (var r in ingress.Spec.Rules)
+                    {
+                        foreach (var p in r.Http.Paths)
+                        {
+                            var ssl = ingress.Spec.Tls?.Any(x => x.Hosts.Contains(r.Host)) == true;
+                            var protocol = ssl ? "https" : "http";
+                            yield return $"{protocol}://{r.Host}{p.Path}";
+                        }
+                    }
+                }
+            }
+
+        }
         public bool HasIngressesDefined => IngressList?.Any() == true;
 
         public IPAddress IngressIPAddress { get; } = IPAddress.Parse($"127.2.2.1");

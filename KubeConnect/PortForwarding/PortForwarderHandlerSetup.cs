@@ -40,9 +40,10 @@ namespace KubeConnect.PortForwarding
                 builder.UseHttps(CertificateHelper.CreateCertificate(manager.IngressHostNames));
             });
 
-            foreach (var host in manager.IngressHostNames)
+
+            foreach (var ingress in manager.IngressAddresses)
             {
-                logger.LogInformation($"Listening on http://{host} and https://{host}");
+                logger.LogInformation($"Listening to {ingress}");
             }
 
             foreach (var service in manager.ServiceAddresses)

@@ -112,11 +112,11 @@ Version {CurrentVersion}
             {
                 lifetime.ApplicationStarted.Register(() =>
                 {
-                    var host = manager.IngressHostNames.FirstOrDefault();
+                    var address = manager.IngressAddresses.FirstOrDefault();
 
-                    if (host != null)
+                    if (address != null)
                     {
-                        OpenUrl($"https://{host}");
+                        OpenUrl(address);
                     }
                 });
             }

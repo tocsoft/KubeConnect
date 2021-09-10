@@ -28,7 +28,8 @@ namespace KubeConnect.Ingress
                 {
                     foreach (var p in r.Http.Paths)
                     {
-                        var id = $"{r.Host}{p.Path}";
+                        var pathPrefix = p.Path.TrimEnd('/');
+                        var id = $"{r.Host}{pathPrefix}";
                         var route = new RouteConfig
                         {
                             ClusterId = id,
@@ -36,11 +37,12 @@ namespace KubeConnect.Ingress
                             Match = new RouteMatch
                             {
                                 Hosts = new[] { r.Host },
-                                Path = $"{p.Path.TrimEnd('/')}/{{*catch-all}}"
+                                Path = $"{pathPrefix}/{{*catch-all}}"
                             }
                         };
-                        route.WithTransformPathRemovePrefix(p.Path);
-                        route.WithTransformXForwarded();
+                        route = route.WithTransformPathRemovePrefix(pathPrefix);
+                        route = route.WithTransformXForwarded(xFor: ForwardedTransformActions.Set, xHost: ForwardedTransformActions.Set, xProto: ForwardedTransformActions.Set, xPrefix: ForwardedTransformActions.Off);
+                        route = route.WithTransformRequestHeader("X-Forwarded-Prefix", pathPrefix);
 
                         var serviceName = p.Backend.Service.Name;
                         var servicePort = p.Backend.Service.Port.Number;
