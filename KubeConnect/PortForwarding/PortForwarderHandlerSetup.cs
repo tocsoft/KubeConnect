@@ -40,7 +40,6 @@ namespace KubeConnect.PortForwarding
                 builder.UseHttps(CertificateHelper.CreateCertificate(manager.IngressHostNames));
             });
 
-
             foreach (var ingress in manager.IngressAddresses)
             {
                 logger.LogInformation($"Listening to {ingress}");
@@ -62,7 +61,6 @@ namespace KubeConnect.PortForwarding
                             return async (context) =>
                             {
                                 Debug.Assert(port != null);
-
                                 context.Features.Set(port);
                                 context.Features.Set(service.Service);
                                 await next(context);

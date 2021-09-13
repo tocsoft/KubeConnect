@@ -66,7 +66,7 @@ namespace KubeConnect
             ingressList = await kubernetesClient.ListNamespacedIngressAsync(@namespace);
 
             // assign IP Addresses
-            int ipCounter = 1;
+            int ipCounter = 2;
 
             serviceAddresses = new List<(V1Service Service, IPAddress IPAddress)>();
             foreach (var s in serviceList.Items)

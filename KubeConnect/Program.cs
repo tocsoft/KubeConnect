@@ -5,8 +5,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
@@ -63,7 +63,7 @@ namespace KubeConnect
             {
                 Debugger.Launch();
             }
-            
+
             IConsole console;
             if (!string.IsNullOrWhiteSpace(parseArgs.ConsolePipeName))
             {
@@ -71,7 +71,7 @@ namespace KubeConnect
             }
             else
             {
-                 console = ConsoleWrapper.Instance;
+                console = ConsoleWrapper.Instance;
             }
 
             if (!parseArgs.NoLogo)
@@ -127,7 +127,21 @@ Version {CurrentVersion}
                 cts.Cancel();
                 _ = serverHost.StopAsync();
             };
-            await serverHost.RunAsync(cts.Token);
+            try
+            {
+                await serverHost.RunAsync(cts.Token);
+            }
+            catch (IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException ain)
+            {
+                var msg = ex.Message;
+                msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
+                foreach (var s in manager.ServiceAddresses)
+                {
+                    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
+                }
+                console.WriteErrorLine(msg);
+                return 1;
+            }
 
             return 0;
         }
