@@ -40,6 +40,7 @@ namespace KubeConnect
             foreach (var service in serviceManager.ServiceAddresses)
             {
                 dnsEntries[service.Service.Name()] = service.IPAddress;
+                dnsEntries[$"{service.Service.Name()}.{service.Service.Namespace()}.svc.cluster.local"] = service.IPAddress;
             }
         }
 
@@ -82,7 +83,7 @@ namespace KubeConnect
                 isStoped = true;
                 logger.LogInformation("Removing services from HOSTS file");
             }
-            
+
             RetryIoOP(5, () =>
             {
                 WriteHostsFile(dnsEntries, false);
@@ -97,17 +98,21 @@ namespace KubeConnect
             using (var fs = File.Open(hostPath, FileMode.Open, FileAccess.ReadWrite, FileShare.Read))
             using (var sr = new StreamReader(fs, leaveOpen: true))
             {
-                var dnsNames = lookup.ToDictionary(X => $" {X.Key}", x => x.Value.ToString());
+                var dnsNamesOnly = lookup.Select(x => x.Key);
 
-                var sb = ReadWithoutServices(sr, dnsNames.Keys);
+                var sb = ReadWithoutServices(sr, dnsNamesOnly);
 
                 if (writeIpAddresses)
                 {
-                    foreach (var n in dnsNames)
+                    foreach (var grp in lookup.GroupBy(x => x.Value))
                     {
-                        sb.Append(n.Value);
-                        sb.Append(" ");
-                        sb.AppendLine(n.Key);
+                        sb.Append(grp.Key.ToString());
+                        foreach (var val in grp)
+                        {
+                            sb.Append(" ");
+                            sb.Append(val.Key);
+                        }
+                        sb.AppendLine();
                     }
                 }
 
