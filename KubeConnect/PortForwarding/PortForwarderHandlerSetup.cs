@@ -76,7 +76,7 @@ namespace KubeConnect.PortForwarding
                     {
                         if (args.UpdateHosts)
                         {
-                            logger.LogInformation("Forwarding {Service} to tcp://{Service}:{Port}", service.Service.Name(), targetPort);
+                            logger.LogInformation("Forwarding {Service} to tcp://{Service}:{Port}", service.Service.Name(), service.Service.Name(), targetPort);
                         }
                         else
                         {
