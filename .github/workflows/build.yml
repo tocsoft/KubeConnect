@@ -42,7 +42,8 @@ jobs:
         shell: pwsh
         run: |
           $pck = "$(Get-ChildItem .\publish\tool\*.nupkg | foreach {$_.FullName } | select -First 1)"
-          dotnet nuget push $pck --api-key ${{ secrets.NUGET_API_KEY }}
+          Write-Host "publishing $pck"
+          dotnet nuget push "$pck" --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v2
