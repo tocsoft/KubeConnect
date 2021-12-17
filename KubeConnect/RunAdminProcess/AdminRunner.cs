@@ -21,13 +21,13 @@ namespace KubeConnect.RunAdminProcess
                     return -1;
                 }
                 var forwarder = new IPCServiceForwarder(console);
-                var commandline = $" --elevated-command {forwarder.PipeName} ";
+                var commandline = Environment.CommandLine;
+
+                commandline += $" --elevated-command {forwarder.PipeName} ";
                 if (Debugger.IsAttached)
                 {
                     commandline += "--attach-debugger ";
                 }
-
-                commandline += Environment.CommandLine;
 
                 var cts = new CancellationTokenSource();
 
