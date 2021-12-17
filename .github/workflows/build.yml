@@ -41,7 +41,8 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         shell: pwsh
         run: |
-          dotnet nuget push ./publish/tool/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }}
+          $pck = "$(Get-ChildItem .\publish\tool\*.nupkg | foreach {$_.FullName } | select -First 1)"
+          dotnet nuget push $pck --api-key ${{ secrets.NUGET_API_KEY }}
 
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v2
