@@ -46,7 +46,7 @@ namespace KubeConnect.Ingress
 
                         var serviceName = p.Backend.Service.Name;
                         var servicePort = p.Backend.Service.Port.Number;
-
+                        var targetIP = manager.ServiceAddresses.Single(x => x.Service.Metadata.Name.Equals(serviceName, StringComparison.OrdinalIgnoreCase)).IPAddress;
                         var cluster = new ClusterConfig
                         {
                             ClusterId = id,
@@ -54,7 +54,7 @@ namespace KubeConnect.Ingress
                             {
                                 [serviceName] = new DestinationConfig
                                 {
-                                    Address = $"http://{serviceName}:{servicePort}"
+                                    Address = $"http://{targetIP}:{servicePort}"
                                 }
                             }
                         };

@@ -2,7 +2,7 @@
   "profiles": {
     "KubeConnect": {
       "commandName": "Project",
-      "commandLineArgs": "-x minikube"
+      "commandLineArgs": "-x minikube -skip-hosts -http-only"
     }
   }
 }

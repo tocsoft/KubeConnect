@@ -58,7 +58,7 @@ namespace KubeConnect
 
         private static async Task<int> Main(string[] args)
         {
-            var parseArgs = new Args(args);
+            Args parseArgs = new Args(args);
             if (parseArgs.AttachDebugger)
             {
                 Debugger.Launch();
@@ -83,11 +83,10 @@ namespace KubeConnect
  | . \ |_| | |_) |  __/ |__| (_) | | | | | | |  __/ (__| |_ 
  |_|\_\__,_|_.__/ \___|\____\___/|_| |_|_| |_|\___|\___|\__|
                                                             
-Version {CurrentVersion}
-{RepositoryUrl}");
+Version {CurrentVersion}");
             }
 
-            if (!RootChecker.IsRoot())
+            if (parseArgs.RequireAdmin && !RootChecker.IsRoot())
             {
                 return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
             }
@@ -101,11 +100,11 @@ Version {CurrentVersion}
 
             var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
 
-            var manager = new ServiceManager(client, currentNamespace, console);
+            var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
             // ensure we load up configs form k8s
             await manager.LoadBindings();
 
-            var serverHost = CreateHostBuilder(manager, console, client).Build();
+            var serverHost = CreateHostBuilder(manager, console, client, parseArgs).Build();
 
             var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
             if (parseArgs.LaunchBrowser)
@@ -146,7 +145,7 @@ Version {CurrentVersion}
             return 0;
         }
 
-        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes) =>
+        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes, Args args) =>
             Host.CreateDefaultBuilder(Array.Empty<string>())
                 .ConfigureLogging((s, o) =>
                 {
@@ -155,11 +154,15 @@ Version {CurrentVersion}
                 })
                 .ConfigureServices(services =>
                 {
+                    services.AddSingleton(args);
                     services.AddSingleton(kubernetes);
                     services.AddSingleton(manager);
                     services.AddSingleton(console);
                     services.AddPortForwarder();
-                    services.AddHostedService<HostsFileUpdater>();
+                    if (args.UpdateHosts)
+                    {
+                        services.AddHostedService<HostsFileUpdater>();
+                    }
                 })
                 .ConfigureWebHostDefaults(webBuilder =>
                 {

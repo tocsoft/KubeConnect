@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+using System.Net;
 
 namespace KubeConnect
 {
@@ -91,6 +92,15 @@ namespace KubeConnect
                     case "kubeconfig":
                         KubeconfigFile = argNext;
                         break;
+                    case "skip-hosts":
+                        UpdateHosts = false;
+                        break;
+                    case "http-only":
+                        UseSsl = false;
+                        break;
+                    case "forward-mapped-only":
+                        AllServices = false;
+                        break;
                     default:
                         break;
                 }
@@ -106,19 +116,26 @@ namespace KubeConnect
         public bool Elevated { get; }
         public bool AttachDebugger { get; }
         public bool LaunchBrowser { get; } = false;
+        public bool UpdateHosts { get; } = true;
+        public bool UseSsl { get; } = true;
+        public bool AllServices { get; } = true;
+
+        public bool RequireAdmin => UpdateHosts || UseSsl;
 
         public class Mapping
         {
             private string v;
 
-            public Mapping(string v)
+            public Mapping(string map)
             {
-                this.v = v;
+                var parts = map.Split(new[] { ':' }, 2);
+                ServiceName = parts[0];
+                Address = IPAddress.Parse(parts[1]);
             }
 
             public string ServiceName { get; set; } = string.Empty;
-            public int LocalPort { get; set; }
-            public int RemotePort { get; set; }
+
+            public IPAddress Address { get; set; } = IPAddress.Loopback;
         }
     }
 }
