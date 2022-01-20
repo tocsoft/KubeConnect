@@ -7,18 +7,6 @@
     "KubeConnect-reduced": {
       "commandName": "Project",
       "commandLineArgs": "-x minikube -skip-hosts -http-only "
-    },
-    "KubeConnect-bridge": {
-      "commandName": "Project",
-      "commandLineArgs": "bridge --service service-name:5552"
-    },
-    "KubeConnect-bridge-as": {
-      "commandName": "Project",
-      "commandLineArgs": "bridge --service landscape-explorer:5552 --envvar=-ASPNETCORE_URLS --working-directory C:\\Source\\Work\\Hubl.LandscapeExplorer\\src\\Hubl.LandscapeExplorer\\ -- dotnet run"
-    },
-    "KubeConnect-runas": {
-      "commandName": "Project",
-      "commandLineArgs": "runas --service service-name:5552 --envvar=-ASPNETCORE_URLS -- dotnet run --project C:\\Source\\Project.csproj"
     }
   }
 }
