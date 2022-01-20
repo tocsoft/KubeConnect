@@ -263,9 +263,9 @@ Version {CurrentVersion}");
                 }
             }
         }
+
         private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes, Args args)
-        {
-            var builder = Host.CreateDefaultBuilder(Array.Empty<string>())
+            => Host.CreateDefaultBuilder(Array.Empty<string>())
                 .ConfigureLogging((s, o) =>
                 {
                     o.ClearProviders();
@@ -277,30 +277,15 @@ Version {CurrentVersion}");
                     services.AddSingleton(kubernetes);
                     services.AddSingleton(manager);
                     services.AddSingleton(console);
-                    services.AddHostedService<BridgeHostedService>();
+                    services.AddPortForwarder();
+                    services.AddHostedService<HostsFileUpdater>();
+                })
+                .ConfigureWebHostDefaults(webBuilder =>
+                {
+                    webBuilder.PreferHostingUrls(false);
+                    webBuilder.UseUrls(Array.Empty<string>());
+
+                    webBuilder.UseStartup<Startup>();
                 });
-
-            builder = builder.ConfigureServices(services =>
-            {
-                services.AddPortForwarder();
-                services.AddHostedService<HostsFileUpdater>();
-            })
-            .ConfigureWebHostDefaults(webBuilder =>
-            {
-                webBuilder.PreferHostingUrls(false);
-                webBuilder.UseUrls(Array.Empty<string>());
-
-                webBuilder.UseStartup<Startup>();
-            });
-
-            return builder;
-        }
-    }
-
-    public static class HostBuilder
-    {
-        public static IHostBuilder WithKubeConnect(this IHostBuilder hostbuilder) =>
-            hostbuilder;
-
     }
 }
