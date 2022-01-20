@@ -35,61 +35,91 @@ namespace KubeConnect.PortForwarding
         {
             options.ApplicationServices = serviceProvider;
 
-            if (manager.IngressList.Any())
+            if (manager.IngressConfig.Enabled)
             {
-                options.Listen(manager.IngressIPAddress, 80);
+                options.Listen(manager.IngressConfig.AssignedAddress, 80);
 
-                if (args.UseSsl)
+                if (manager.IngressConfig.UseSsl)
                 {
-                    options.Listen(manager.IngressIPAddress, 443, builder =>
+                    options.Listen(manager.IngressConfig.AssignedAddress, 443, builder =>
                     {
-                        builder.UseHttps(CertificateHelper.CreateCertificate(manager.IngressHostNames));
+                        builder.UseHttps(CertificateHelper.CreateCertificate(manager.IngressConfig.HostNames));
                     });
                 }
 
                 if (args.UpdateHosts)
                 {
-                    foreach (var ingress in manager.IngressAddresses)
+                    foreach (var address in manager.IngressConfig.Addresses)
                     {
-                        var finalUrl = ingress;
-                        if (!args.UseSsl)
-                        {
-                            finalUrl = finalUrl.Replace("https://", "http://");
-                        }
-                        logger.LogInformation($"Listening to {finalUrl}");
+
+                        logger.LogInformation($"Listening to {address}");
                     }
                 }
                 else
                 {
-                    logger.LogInformation($"Listening to http://{manager.IngressIPAddress}");
+                    logger.LogInformation($"Listening to http://{manager.IngressConfig.AssignedAddress}");
                 }
             }
 
-            foreach (var service in manager.ServiceAddresses)
+            foreach (var service in manager.Services)
             {
-                foreach (var port in service.Service.Spec.Ports)
+                var serviceSelector = string.Join(",", service.Selector.Select((s) => $"{s.Key}={s.Value}"));
+                if (service.Bridge)
                 {
-                    var targetPort = int.Parse(port.TargetPort?.Value ?? port.Port.ToString());
+                    // add in the ssh port to allow
+                    var endpoint = new IPEndPoint(service.AssignedAddress, 22);
 
-                    var endpoint = new IPEndPoint(service.IPAddress, targetPort);
                     options.Listen(endpoint, builder =>
                     {
-                        if (args.UpdateHosts)
+                        var binding = new PortBinding()
                         {
-                            logger.LogInformation("Forwarding {Service} to tcp://{Service}:{Port}", service.Service.Name(), service.Service.Name(), targetPort);
-                        }
-                        else
-                        {
-                            logger.LogInformation("Forwarding {Service} to tcp://{Endpoint}", service.Service.Name(), endpoint);
-                        }
+                            Name = service.ServiceName,
+                            Namespace = service.Namespace,
+                            TargetPort = 2222,
+                            Selector = serviceSelector
+                        };
 
                         builder.Use(next =>
                         {
                             return async (context) =>
                             {
-                                Debug.Assert(port != null);
-                                context.Features.Set(port);
-                                context.Features.Set(service.Service);
+                                context.Features.Set(binding);
+                                await next(context);
+                            };
+                        });
+
+                        builder.UseConnectionHandler<PortForwardingConnectionHandler>();
+                    });
+                }
+
+                foreach (var portDetails in service.TcpPorts)
+                {
+                    var endpoint = new IPEndPoint(service.AssignedAddress, portDetails.listenPort);
+
+                    options.Listen(endpoint, builder =>
+                    {
+                        if (args.UpdateHosts)
+                        {
+                            logger.LogInformation("Forwarding {Service} to tcp://{Service}:{Port}", service.ServiceName, service.ServiceName, portDetails.destinationPort);
+                        }
+                        else
+                        {
+                            logger.LogInformation("Forwarding {Service} to tcp://{Endpoint}", service.ServiceName, endpoint);
+                        }
+
+                        var binding = new PortBinding()
+                        {
+                            Name = service.ServiceName,
+                            Namespace = service.Namespace,
+                            TargetPort = portDetails.destinationPort,
+                            Selector = serviceSelector
+                        };
+
+                        builder.Use(next =>
+                        {
+                            return async (context) =>
+                            {
+                                context.Features.Set(binding);
                                 await next(context);
                             };
                         });

@@ -6,7 +6,11 @@
     },
     "KubeConnect-reduced": {
       "commandName": "Project",
-      "commandLineArgs": "-x minikube -skip-hosts -http-only"
+      "commandLineArgs": "-x minikube -skip-hosts -http-only "
+    },
+    "KubeConnect-bridge": {
+      "commandName": "Project",
+      "commandLineArgs": "--bridge landscape-explorer:5552"
     }
   }
 }

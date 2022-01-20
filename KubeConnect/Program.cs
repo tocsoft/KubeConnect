@@ -1,4 +1,5 @@
 ﻿using k8s;
+using KubeConnect.Bridge;
 using KubeConnect.RunAdminProcess;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
@@ -103,15 +104,18 @@ Version {CurrentVersion}");
             var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
             // ensure we load up configs form k8s
             await manager.LoadBindings();
+            var builder = CreateHostBuilder(manager, console, client, parseArgs);
 
-            var serverHost = CreateHostBuilder(manager, console, client, parseArgs).Build();
+            var serverHost = builder.Build();
 
             var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
             if (parseArgs.LaunchBrowser)
             {
                 lifetime.ApplicationStarted.Register(() =>
                 {
-                    var address = manager.IngressAddresses.FirstOrDefault();
+                    if (!manager.IngressConfig.Enabled) return;
+
+                    var address = manager.IngressConfig.Addresses.FirstOrDefault();
 
                     if (address != null)
                     {
@@ -120,57 +124,44 @@ Version {CurrentVersion}");
                 });
             }
 
+            lifetime.ApplicationStopping.Register(() =>
+            {
+                var what = "???";
+            });
             console.CancelKeyPress += delegate
             {
                 console.WriteLine("Shutting down!");
                 cts.Cancel();
                 _ = serverHost.StopAsync();
             };
+
             try
             {
-                await serverHost.RunAsync(cts.Token);
+                await serverHost.RunAsync();
             }
             catch (IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException ain)
             {
-                var msg = ex.Message;
-                msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
-                foreach (var s in manager.ServiceAddresses)
-                {
-                    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
-                }
-                console.WriteErrorLine(msg);
-                return 1;
+                throw;
+                //var msg = ex.Message;
+                //if (manager.IngressConfig.Enabled)
+                //{
+
+                //}
+                //msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
+                //foreach (var s in manager.ServiceAddresses)
+                //{
+                //    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
+                //}
+                //console.WriteErrorLine(msg);
+                //return 1;
+            }
+            catch(Exception e) {
+                throw;
             }
 
             return 0;
         }
 
-        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes, Args args) =>
-            Host.CreateDefaultBuilder(Array.Empty<string>())
-                .ConfigureLogging((s, o) =>
-                {
-                    o.ClearProviders();
-                    o.Services.AddSingleton<ILoggerProvider, IConsoleLogProvider>();
-                })
-                .ConfigureServices(services =>
-                {
-                    services.AddSingleton(args);
-                    services.AddSingleton(kubernetes);
-                    services.AddSingleton(manager);
-                    services.AddSingleton(console);
-                    services.AddPortForwarder();
-                    if (args.UpdateHosts)
-                    {
-                        services.AddHostedService<HostsFileUpdater>();
-                    }
-                })
-                .ConfigureWebHostDefaults(webBuilder =>
-                {
-                    webBuilder.PreferHostingUrls(false);
-                    webBuilder.UseUrls(Array.Empty<string>());
-
-                    webBuilder.UseStartup<Startup>();
-                });
 
         private static void OpenUrl(string url)
         {
@@ -200,5 +191,44 @@ Version {CurrentVersion}");
                 }
             }
         }
+        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes, Args args)
+        {
+            var builder = Host.CreateDefaultBuilder(Array.Empty<string>())
+                .ConfigureLogging((s, o) =>
+                {
+                    o.ClearProviders();
+                    o.Services.AddSingleton<ILoggerProvider, IConsoleLogProvider>();
+                })
+                .ConfigureServices(services =>
+                {
+                    services.AddSingleton(args);
+                    services.AddSingleton(kubernetes);
+                    services.AddSingleton(manager);
+                    services.AddSingleton(console);
+                    services.AddHostedService<BridgeHostedService>();
+                });
+
+            builder = builder.ConfigureServices(services =>
+            {
+                services.AddPortForwarder();
+                services.AddHostedService<HostsFileUpdater>();
+            })
+            .ConfigureWebHostDefaults(webBuilder =>
+            {
+                webBuilder.PreferHostingUrls(false);
+                webBuilder.UseUrls(Array.Empty<string>());
+
+                webBuilder.UseStartup<Startup>();
+            });
+
+            return builder;
+        }
+    }
+
+    public static class HostBuilder
+    {
+        public static IHostBuilder WithKubeConnect(this IHostBuilder hostbuilder) =>
+            hostbuilder;
+
     }
 }

@@ -3,9 +3,11 @@ using k8s.Models;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 
 namespace KubeConnect.PortForwarding
@@ -27,22 +29,20 @@ namespace KubeConnect.PortForwarding
             var input = connection.Transport.Input;
             var output = connection.Transport.Output;
 
-            var port = connection.Features.Get<V1ServicePort>();
-            var service = connection.Features.Get<V1Service>();
+            var binding = connection.Features.Get<PortBinding>();
             // establish connection to cluster/pod
             // sync data to/from pod
 
-            var labelSelector = string.Join(",", service.Spec.Selector.Select((s) => $"{s.Key}={s.Value}"));
-            var pods = await kubernetesClient.ListNamespacedPodAsync(service.Namespace(), labelSelector: labelSelector);
+            var pods = await kubernetesClient.ListNamespacedPodAsync(binding.Namespace, labelSelector: binding.Selector);
 
             // random pod here???
             var pod = pods.Items[0];
-            
-            logger.LogInformation("[{ConnectionID}] Opening connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, service.Name(), (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), port.Port);
+
+            logger.LogInformation("[{ConnectionID}] Opening connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, binding.Name, (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), binding.TargetPort);
 
             try
             {
-                var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), service.Namespace(), new int[] { port.Port }, "v4.channel.k8s.io");
+                var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), binding.Namespace, new int[] { binding.TargetPort }, "v4.channel.k8s.io");
 
                 using var demux = new StreamDemuxer(webSocket, StreamType.PortForward);
 
@@ -95,8 +95,17 @@ namespace KubeConnect.PortForwarding
             }
             finally
             {
-                logger.LogInformation("[{ConnectionID}] Closing connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, service.Name(), (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), port.Port);
+                logger.LogInformation("[{ConnectionID}] Closing connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, binding.Name, (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), binding.TargetPort);
             }
         }
     }
+
+    public class PortBinding
+    {
+        public string Name { get; init; }
+        public string Namespace { get; init; }
+        public string Selector { get; init; }
+        public int TargetPort { get; init; }
+    }
+
 }

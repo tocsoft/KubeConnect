@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Net;
 
 namespace KubeConnect
@@ -15,6 +16,7 @@ namespace KubeConnect
 
         List<string> optionsWithArguments = new List<string>()
             {
+                "bridge",
                 "namespace",
                 "elevated-command",
                 "context",
@@ -24,12 +26,21 @@ namespace KubeConnect
 
         public Args(string[] args)
         {
+            this.RemainingArgs = Array.Empty<string>();
+            var remainingSet = new List<string>(args.Length);
             for (var i = 0; i < args.Length; i++)
             {
                 var a = args[i]?.ToLower();
                 if (a == null)
                 {
                     continue;
+                }
+
+                if (a == "--")
+                {
+                    // capture all args after '--' so that we can do stuff with it
+                    this.UnprocessedArgs = args.AsSpan().Slice(i).ToArray();
+                    break;
                 }
 
                 string option = "";
@@ -98,10 +109,15 @@ namespace KubeConnect
                     case "http-only":
                         UseSsl = false;
                         break;
+                    case "bridge":
+                        BridgeMappings.Add(new BridgeMapping(argNext));
+                        break;
                     case "forward-mapped-only":
                         AllServices = false;
                         break;
                     default:
+                        // capture unknown args
+                        remainingSet.Add(option);
                         break;
                 }
             }
@@ -120,12 +136,14 @@ namespace KubeConnect
         public bool UseSsl { get; } = true;
         public bool AllServices { get; } = true;
 
-        public bool RequireAdmin => UpdateHosts || UseSsl;
+        public bool RequireAdmin => (UpdateHosts || UseSsl);
+
+        public List<BridgeMapping> BridgeMappings { get; } = new List<BridgeMapping>();
+        public string[] RemainingArgs { get; }
+        public string[] UnprocessedArgs { get; }
 
         public class Mapping
         {
-            private string v;
-
             public Mapping(string map)
             {
                 var parts = map.Split(new[] { ':' }, 2);
@@ -136,6 +154,31 @@ namespace KubeConnect
             public string ServiceName { get; set; } = string.Empty;
 
             public IPAddress Address { get; set; } = IPAddress.Loopback;
+        }
+        public class BridgeMapping
+        {
+            public BridgeMapping(string map)
+            {
+                var parts = map.Split(new[] { ':' }, 2);
+                ServiceName = parts[0];
+                var idx = ServiceName.LastIndexOf(',');
+                if (idx > 0)
+                {
+                    this.RemotePort = int.Parse(ServiceName.AsSpan().Slice(idx + 1));
+                }
+                if (parts.Length > 1)
+                {
+                    LocalPort = int.Parse(parts[1]);
+                }
+                else
+                {
+                    LocalPort = this.RemotePort;
+                }
+            }
+
+            public string ServiceName { get; set; } = string.Empty;
+            public int RemotePort { get; set; } = -1;
+            public int LocalPort { get; set; } = -1;
         }
     }
 }

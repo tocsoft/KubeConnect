@@ -17,14 +17,15 @@ namespace KubeConnect
     {
         private readonly ServiceManager serviceManager;
         private readonly ILogger<HostsFileUpdater> logger;
+        private readonly Args args;
         private readonly string hostPath;
         private readonly Dictionary<string, IPAddress> dnsEntries;
 
-        public HostsFileUpdater(ServiceManager serviceManager, ILogger<HostsFileUpdater> logger)
+        public HostsFileUpdater(ServiceManager serviceManager, ILogger<HostsFileUpdater> logger, Args args)
         {
             this.serviceManager = serviceManager;
             this.logger = logger;
-
+            this.args = args;
             hostPath = "/etc/hosts";
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
@@ -33,19 +34,22 @@ namespace KubeConnect
 
             dnsEntries = new Dictionary<string, IPAddress>();
 
-            foreach (var host in serviceManager.IngressHostNames)
+            foreach (var host in serviceManager.IngressConfig.HostNames)
             {
-                dnsEntries[host] = serviceManager.IngressIPAddress;
+                dnsEntries[host] = serviceManager.IngressConfig.AssignedAddress;
             }
-            foreach (var service in serviceManager.ServiceAddresses)
+
+            foreach (var service in serviceManager.Services)
             {
-                dnsEntries[service.Service.Name()] = service.IPAddress;
-                dnsEntries[$"{service.Service.Name()}.{service.Service.Namespace()}.svc.cluster.local"] = service.IPAddress;
+                dnsEntries[service.ServiceName] = service.AssignedAddress;
+                dnsEntries[$"{service.ServiceName}.{service.Namespace}.svc.cluster.local"] = service.AssignedAddress;
             }
         }
 
         public Task StartAsync(CancellationToken cancellationToken)
         {
+            if (!args.UpdateHosts) return Task.CompletedTask;
+
             logger.LogInformation("Adding services to HOSTS file");
 
             return Task.Run(() =>
@@ -78,6 +82,8 @@ namespace KubeConnect
         bool isStoped = false;
         public Task StopAsync(CancellationToken cancellationToken)
         {
+            if (!args.UpdateHosts) return Task.CompletedTask;
+
             if (!isStoped)
             {
                 isStoped = true;
