@@ -63,34 +63,32 @@ namespace KubeConnect.PortForwarding
 
             foreach (var service in manager.Services)
             {
-                var serviceSelector = string.Join(",", service.Selector.Select((s) => $"{s.Key}={s.Value}"));
-                if (service.Bridge)
+                var serviceSelector = service.StringSelector;
+                
+                // no real harm in always doing this
+                // add in the ssh port to allow for bridge injection
+                var sshendpoint = new IPEndPoint(service.AssignedAddress, 22);
+                options.Listen(sshendpoint, builder =>
                 {
-                    // add in the ssh port to allow
-                    var endpoint = new IPEndPoint(service.AssignedAddress, 22);
-
-                    options.Listen(endpoint, builder =>
+                    var binding = new PortBinding()
                     {
-                        var binding = new PortBinding()
+                        Name = service.ServiceName,
+                        Namespace = service.Namespace,
+                        TargetPort = 2222,
+                        Selector = serviceSelector
+                    };
+
+                    builder.Use(next =>
+                    {
+                        return async (context) =>
                         {
-                            Name = service.ServiceName,
-                            Namespace = service.Namespace,
-                            TargetPort = 2222,
-                            Selector = serviceSelector
+                            context.Features.Set(binding);
+                            await next(context);
                         };
-
-                        builder.Use(next =>
-                        {
-                            return async (context) =>
-                            {
-                                context.Features.Set(binding);
-                                await next(context);
-                            };
-                        });
-
-                        builder.UseConnectionHandler<PortForwardingConnectionHandler>();
                     });
-                }
+
+                    builder.UseConnectionHandler<PortForwardingConnectionHandler>();
+                });
 
                 foreach (var portDetails in service.TcpPorts)
                 {

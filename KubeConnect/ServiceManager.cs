@@ -1,5 +1,7 @@
 ﻿using k8s;
 using k8s.Models;
+using KubeConnect.Bridge;
+using Renci.SshNet;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -144,34 +146,262 @@ namespace KubeConnect
                 };
             }
 
-            var serviceTomap = new List<V1Service>(serviceList.Items);
-            var serviceAddresses = new List<(V1Service Service, IPAddress IPAddress)>();
             var services = new List<ServiceDetails>();
             // deal with mapped addresses first
-            foreach (var s in serviceTomap.ToArray())
+            foreach (var s in serviceList.Items.OrderBy(X => X.Name()))
             {
                 var mapping = args.Mappings.FirstOrDefault(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase));
                 var bridge = args.BridgeMappings.Where(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase)).ToList();
-                if (mapping == null && !bridge.Any())
+
+                // track this one
+
+                if (mapping == null && !bridge.Any() && !args.AllServices)
                 {
                     continue;
                 }
 
                 var address = mapping?.Address ?? NextAddress();
-                serviceTomap.Remove(s);
                 services.Add(Create(bridge, address, s));
             }
 
-            if (args.AllServices)
+            this.Services = services;
+        }
+
+        public ServiceDetails GetService(string serviceName)
+            => this.Services.Single(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+
+        private async Task<V1Deployment> FindMatchingDeployment(ServiceDetails service)
+        {
+            var results = await kubernetesClient.ListNamespacedDeploymentAsync(service.Namespace);
+            foreach (var dep in results.Items)
             {
-                foreach (var s in serviceTomap)
+                if (dep.MatchTemplate(service))
                 {
-                    var address = NextAddress();
-                    services.Add(Create(null, address, s));
+                    return dep;
                 }
             }
 
-            this.Services = services;
+            return null;
+        }
+        private async Task<V1Pod> FindInterceptionPod(ServiceDetails service)
+        {
+            var runningPods = (await kubernetesClient.ListNamespacedPodAsync(service.Namespace, labelSelector: "kubeconnect.bridge/ssh=true")).Items;
+            foreach (var dep in runningPods)
+            {
+                if (dep.Match(service))
+                {
+                    return dep;
+                }
+            }
+
+            return null;
+        }
+
+        private async Task DisableDeployment(V1Deployment deployment)
+        {
+            if (deployment.Spec.Replicas != 0)
+            {
+                deployment.Metadata.Annotations["kubeconnect.bridge/original_replicas"] = deployment.Spec.Replicas.ToString();
+                deployment.Spec.Replicas = 0;
+                await kubernetesClient.ReplaceNamespacedDeploymentAsync(deployment, deployment.Name(), deployment.Namespace(), fieldManager: "kubeconnect:bridge");
+            }
+        }
+
+        private async Task EnableDeployment(V1Deployment deployment)
+        {
+            if (deployment.Spec.Replicas == 0 && deployment.Metadata.Annotations.TryGetValue("kubeconnect.bridge/original_replicas", out var orgReplicaCount))
+            {
+                if (int.TryParse(orgReplicaCount, out var target))
+                {
+                    deployment.Spec.Replicas = target;
+                    deployment.Metadata.Annotations.Remove("kubeconnect.bridge/original_replicas");
+                    await kubernetesClient.ReplaceNamespacedDeploymentAsync(deployment, deployment.Name(), deployment.Namespace(), fieldManager: "kubeconnect:bridge");
+                }
+            }
+        }
+
+        private async Task StartSshForward(ServiceDetails service)
+        {
+            var pod = await FindInterceptionPod(service);
+            // clean up any old pods incase we have changes settigns
+            if (pod != null)
+            {
+                await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+            }
+
+            var ports = service.BridgedPorts.Select(X => new V1ContainerPort
+            {
+                ContainerPort = X.remotePort,
+                Name = $"port-{X.remotePort}"
+            }).ToList();
+            ports.Add(new V1ContainerPort
+            {
+                ContainerPort = 2222,
+                Name = "ssh"
+            });
+
+            pod = new V1Pod()
+            {
+                Metadata = new V1ObjectMeta()
+                {
+                    Labels = new Dictionary<string, string>(service.Selector)
+                    {
+                        ["kubeconnect.bridge/ssh"] = "true"
+                    },
+                    Name = $"{service.ServiceName}-{Guid.NewGuid().ToString().Substring(0, 4)}-ssh",
+                    NamespaceProperty = service.Namespace
+                },
+                Spec = new V1PodSpec()
+                {
+                    Containers = new List<V1Container>()
+                                {
+                                    new V1Container
+                                    {
+                                        Name = "ssh",
+                                        Image = "linuxserver/openssh-server:latest",
+                                        ImagePullPolicy = "IfNotPresent",
+                                        Env = new List<V1EnvVar>
+                                        {
+
+                                            new V1EnvVar{ Name = "DOCKER_MODS", Value ="linuxserver/mods:openssh-server-ssh-tunnel" },
+                                            new V1EnvVar{ Name = "SUDO_ACCESS", Value ="true" },
+                                            new V1EnvVar{ Name = "PASSWORD_ACCESS", Value ="true" },
+                                            new V1EnvVar{ Name = "USER_PASSWORD", Value = "password" },
+                                        },
+                                        Ports = ports
+                                    }
+                                }
+                }
+            };
+
+            await kubernetesClient.CreateNamespacedPodAsync(pod, pod.Namespace());
+            pod = await AwaitPodRunning(pod);
+            await AwaitOnlyMatchingPodRunning(service, pod);
+            // wait pod count to become 1
+            var count = 10;
+            while (true)
+            {
+                var client = new SshClient(service.ServiceName, "linuxserver.io", "password");
+                try
+                {
+                    client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(4);
+                    client.Connect();
+                    foreach (var mappings in service.BridgedPorts)
+                    {
+                        var port = new ForwardedPortRemote(IPAddress.Any, (uint)mappings.remotePort, IPAddress.Loopback, (uint)mappings.localPort);
+                        client.AddForwardedPort(port);
+                        port.Start();
+                    }
+
+                    // if they all started report it to the console
+                    // maybe should be handled in program??
+                    foreach (var mappings in service.BridgedPorts)
+                    {
+                        console.WriteLine($"Redirecting traffic from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                    }
+                    break;
+                }
+                catch when (count > 0)
+                {
+                    client?.Dispose();
+                    // ignore it 10 times and throw on the 10th
+                }
+            }
+        }
+
+        private async Task AwaitOnlyMatchingPodRunning(ServiceDetails serviceDetails, V1Pod pod)
+        {
+            //wait for 30 seconds for it to start
+            var cts = new CancellationTokenSource(30000);
+            while (!cts.IsCancellationRequested)
+            {
+                var runningPods = (await kubernetesClient.ListNamespacedPodAsync(pod.Namespace())).Items;
+
+                var otherPods = runningPods.Where(x => x.Match(serviceDetails) && !x.Name().Equals(pod.Name(), StringComparison.OrdinalIgnoreCase));
+
+                if (!otherPods.Any())
+                {
+                    // only single the pod of interest exists that matches the service we can carry one
+                    return;
+                }
+            }
+
+            throw new Exception("Failed to shut down other deployments");
+        }
+
+        private async Task<V1Pod> AwaitPodRunning(V1Pod pod)
+        {
+            //wait for 30 seconds for it to start
+            var cts = new CancellationTokenSource(30000);
+            while (!cts.IsCancellationRequested)
+            {
+                var runningPods = (await kubernetesClient.ListNamespacedPodAsync(pod.Namespace())).Items;
+                var resultpod = runningPods.SingleOrDefault(x => x.Name().Equals(pod.Name(), StringComparison.OrdinalIgnoreCase));
+                if (resultpod.Status.Phase == "Running")
+                {
+                    return resultpod;
+                }
+            }
+
+            return null;
+        }
+
+        public async Task Intercept(ServiceDetails service)
+        {
+            var dep = await FindMatchingDeployment(service);
+            await DisableDeployment(dep);
+            await StartSshForward(service);
+        }
+
+        public async Task Release(ServiceDetails service)
+        {
+            var pod = await FindInterceptionPod(service);
+            if (pod != null)
+            {
+                await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+            }
+
+            var dep = await FindMatchingDeployment(service);
+            await EnableDeployment(dep);
+        }
+
+        public async Task ReleaseAll()
+        {
+            foreach (var s in this.Services)
+            {
+                await Release(s);
+            }
+        }
+
+        public async Task<IEnumerable<KeyValuePair<string, string>>> GetEnvironmentVariablesForServiceAsync(ServiceDetails service)
+        {
+            var results = await kubernetesClient.ListNamespacedDeploymentAsync(service.Namespace);
+            var deployment = results.Items.Single(x => x.MatchTemplate(service));
+
+            // TODO handle EnvFrom
+            // TODO inject 'standard' kubernetes env vars for service discovery etc
+
+            var fromCluster = deployment.Spec.Template.Spec.Containers.Single().Env.Select(x => new KeyValuePair<string, string>(x.Name, x.Value)).ToList();
+
+            foreach (var envVar in args.EnvVars)
+            {
+                if (envVar.Mode == Args.EnvVarMapping.EnvVarMappingMode.Remove || envVar.Mode == Args.EnvVarMapping.EnvVarMappingMode.Replace)
+                {
+                    var toRemove = fromCluster.Where(x => x.Key == envVar.Name).ToArray();
+                    foreach (var extra in toRemove)
+                    {
+                        fromCluster.Remove(extra);
+                    }
+                }
+
+                if (envVar.Mode == Args.EnvVarMapping.EnvVarMappingMode.Append || envVar.Mode == Args.EnvVarMapping.EnvVarMappingMode.Replace)
+                {
+                    // set this one now
+                    fromCluster.Add(new KeyValuePair<string, string>(envVar.Name, envVar.Value));
+                }
+            }
+
+            return fromCluster;
         }
     }
 
@@ -206,6 +436,8 @@ namespace KubeConnect
         public string Namespace { get; init; }
 
         public IReadOnlyDictionary<string, string> Selector { get; init; }
+
+        public string StringSelector => string.Join(",", Selector.Select((s) => $"{s.Key}={s.Value}"));
 
         public IPAddress AssignedAddress { get; init; }
 

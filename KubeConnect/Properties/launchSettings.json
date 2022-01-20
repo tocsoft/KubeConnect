@@ -10,7 +10,15 @@
     },
     "KubeConnect-bridge": {
       "commandName": "Project",
-      "commandLineArgs": "--bridge landscape-explorer:5552"
+      "commandLineArgs": "bridge --service service-name:5552"
+    },
+    "KubeConnect-bridge-as": {
+      "commandName": "Project",
+      "commandLineArgs": "bridge --service service-name:5552 --envvar=-ASPNETCORE_URLS --working-directory=C:\\Source\\ -- dotnet run"
+    },
+    "KubeConnect-runas": {
+      "commandName": "Project",
+      "commandLineArgs": "runas --service service-name:5552 --envvar=-ASPNETCORE_URLS -- dotnet run --project C:\\Source\\Project.csproj"
     }
   }
 }

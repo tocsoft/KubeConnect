@@ -96,7 +96,6 @@ Version {CurrentVersion}");
 
             var config = KubernetesClientConfiguration.BuildDefaultConfig();
             IKubernetes client = new Kubernetes(config);
-            console.WriteLine("Starting port forward!");
             parseArgs.Namespace ??= config.Namespace ?? "default";
 
             var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
@@ -124,44 +123,117 @@ Version {CurrentVersion}");
                 });
             }
 
-            lifetime.ApplicationStopping.Register(() =>
-            {
-                var what = "???";
-            });
+            var tcs = new TaskCompletionSource<object>();
             console.CancelKeyPress += delegate
             {
-                console.WriteLine("Shutting down!");
-                cts.Cancel();
-                _ = serverHost.StopAsync();
+                // cancel has been triggered, we can stop waiting
+                tcs.TrySetResult(null);
+
+                if (parseArgs.Action == Args.KubeConnectMode.Connect)
+                {
+                    console.WriteLine("Shutting down!");
+                    cts.Cancel();
+                    _ = serverHost.StopAsync();
+                }
             };
 
-            try
-            {
-                await serverHost.RunAsync();
-            }
-            catch (IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException ain)
-            {
-                throw;
-                //var msg = ex.Message;
-                //if (manager.IngressConfig.Enabled)
-                //{
 
-                //}
-                //msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
-                //foreach (var s in manager.ServiceAddresses)
-                //{
-                //    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
-                //}
-                //console.WriteErrorLine(msg);
-                //return 1;
+            if (parseArgs.Action == Args.KubeConnectMode.Connect)
+            {
+                try
+                {
+                    console.WriteLine("Starting port forward!");
+                    //todo: disable all the bridge stuff for all services on first start as bridging requires a connect session to be running
+                    await serverHost.RunAsync();
+                }
+                catch (IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException ain)
+                {
+                    throw;
+                    //var msg = ex.Message;
+                    //if (manager.IngressConfig.Enabled)
+                    //{
+
+                    //}
+                    //msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
+                    //foreach (var s in manager.ServiceAddresses)
+                    //{
+                    //    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
+                    //}
+                    //console.WriteErrorLine(msg);
+                    //return 1;
+                }
+                catch (Exception e)
+                {
+                    throw;
+                }
+                finally
+                {
+                    await manager.ReleaseAll();
+                }
             }
-            catch(Exception e) {
-                throw;
+            else
+            {
+                if (parseArgs.BridgeMappings.Count != 1)
+                {
+                    throw new Exception("Exactly 1 bridged service must be supplied");
+                }
+
+                var service = manager.GetService(parseArgs.BridgeMappings[0].ServiceName);
+                try
+                {
+                    if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+                    {
+                        //start up the bridge stuff here
+                        await manager.Intercept(service);
+                    }
+
+                    var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;
+
+                    if (runexe)
+                    {
+                        if (parseArgs.UnprocessedArgs.Length == 0)
+                        {
+                            throw new Exception("you must specify the process to start");
+                        }
+
+                        var envVars = await manager.GetEnvironmentVariablesForServiceAsync(service);
+                        var exeArgs = parseArgs.UnprocessedArgs.AsSpan().Slice(1).ToArray();
+                        var proceStartInfo = new ProcessStartInfo(parseArgs.UnprocessedArgs[0]);
+                        proceStartInfo.WorkingDirectory = parseArgs.WorkingDirectory;
+
+                        foreach (var a in exeArgs)
+                        {
+                            proceStartInfo.ArgumentList.Add(a);
+                        }
+
+                        foreach (var a in envVars)
+                        {
+                            proceStartInfo.EnvironmentVariables.Add(a.Key, a.Value);
+                        }
+
+                        var process = Process.Start(proceStartInfo);
+                        ChildProcessTracker.AddProcess(process);
+                        process.WaitForExit();
+                        return process.ExitCode;
+                    }
+                    else
+                    {
+                        console.WriteLine("Hit Ctrl+C to stop bridging service into cluster.");
+                        //wait for cancel
+                        await tcs.Task;
+                    }
+                }
+                finally
+                {
+                    if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+                    {
+                        await manager.Release(service);
+                    }
+                }
             }
 
             return 0;
         }
-
 
         private static void OpenUrl(string url)
         {

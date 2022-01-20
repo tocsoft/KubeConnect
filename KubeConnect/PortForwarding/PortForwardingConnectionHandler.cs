@@ -34,17 +34,19 @@ namespace KubeConnect.PortForwarding
             // sync data to/from pod
 
             var pods = await kubernetesClient.ListNamespacedPodAsync(binding.Namespace, labelSelector: binding.Selector);
-
-            // random pod here???
-            var pod = pods.Items[0];
+            var pod = pods.Items.Where(x => x.Status.Phase == "Running").FirstOrDefault();
+            if(pod == null)
+            {
+                connection.Abort();
+            }
 
             logger.LogInformation("[{ConnectionID}] Opening connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, binding.Name, (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), binding.TargetPort);
 
             try
             {
-                var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), binding.Namespace, new int[] { binding.TargetPort }, "v4.channel.k8s.io");
+                using var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), binding.Namespace, new int[] { binding.TargetPort }, "v4.channel.k8s.io");
 
-                using var demux = new StreamDemuxer(webSocket, StreamType.PortForward);
+                using var demux = new StreamDemuxer(webSocket, StreamType.PortForward, ownsSocket: true);
 
                 demux.Start();
                 connection.ConnectionClosed.Register(() =>
@@ -92,6 +94,13 @@ namespace KubeConnect.PortForwarding
             catch (OperationCanceledException ex)
             {
                 // this will be fine, means the connection was closed by one of the 2 ends
+                connection.Abort();
+            }
+            catch (ConnectionResetException ex)
+            {
+                // connection was closed just die silently
+                //throw;
+                connection.Abort();
             }
             finally
             {
