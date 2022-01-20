@@ -44,6 +44,7 @@ namespace KubeConnect
                 app.UseHsts();
             }
             app.UseRouting();
+
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapReverseProxy();

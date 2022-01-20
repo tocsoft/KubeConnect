@@ -35,8 +35,6 @@ namespace KubeConnect.RunAdminProcess
 
             PipeName = pipeName;
             this.isParent = parent;
-
-
         }
 
         private Stream? reciever;
@@ -71,43 +69,36 @@ namespace KubeConnect.RunAdminProcess
             SemaphoreSlim recieveSignal = new SemaphoreSlim(0);
             this.recieverTask = Task.Run(async () =>
             {
-                try
+                await recieverConnectTask;
+                while (true)
                 {
-                    await recieverConnectTask;
-                    while (true)
+                    await Task.Delay(10);
+                    var length = await ReadLengthAsync(reciever, default).ConfigureAwait(false);
+
+                    var buffer = ArrayPool<byte>.Shared.Rent(length);
+
+                    try
                     {
-                        await Task.Delay(10);
-                        var length = await ReadLengthAsync(reciever, default).ConfigureAwait(false);
-
-                        var buffer = ArrayPool<byte>.Shared.Rent(length);
-
-                        try
+                        var readLength = 0;
+                        while (readLength < length)
                         {
-                            var readLength = 0;
-                            while (readLength < length)
+                            var read = await reciever.ReadAsync(buffer, readLength, length - readLength, default).ConfigureAwait(false);
+                            if (read == -1)
                             {
-                                var read = await reciever.ReadAsync(buffer, readLength, length - readLength, default).ConfigureAwait(false);
-                                if (read == -1)
-                                {
-                                    throw new OperationCanceledException();
-                                }
-
-                                readLength += read;
+                                throw new OperationCanceledException();
                             }
 
-                            var payload = Encoding.UTF8.GetString(buffer, 0, length);
-                            recieveSignal.Release();
-                            messages.Enqueue(payload);
+                            readLength += read;
                         }
-                        finally
-                        {
-                            ArrayPool<byte>.Shared.Return(buffer);
-                        }
+
+                        var payload = Encoding.UTF8.GetString(buffer, 0, length);
+                        recieveSignal.Release();
+                        messages.Enqueue(payload);
                     }
-                }
-                catch (Exception ex)
-                {
-                    throw;
+                    finally
+                    {
+                        ArrayPool<byte>.Shared.Return(buffer);
+                    }
                 }
             });
 
@@ -129,39 +120,32 @@ namespace KubeConnect.RunAdminProcess
 
             this.processSending = Task.Run(async () =>
             {
-                try
+                await senderConnectTask;
+                var lengthBuffer = new byte[2];
+
+                while (true)
                 {
-                    await senderConnectTask;
-                    var lengthBuffer = new byte[2];
+                    await sendSignal.WaitAsync();
+                    await Task.Yield();
 
-                    while (true)
+                    if (sendQueue.TryDequeue(out var payload))
                     {
-                        await sendSignal.WaitAsync();
-                        await Task.Yield();
-
-                        if (sendQueue.TryDequeue(out var payload))
+                        var length = Encoding.UTF8.GetByteCount(payload);
+                        var buffer = ArrayPool<byte>.Shared.Rent(length + 2);
+                        try
                         {
-                            var length = Encoding.UTF8.GetByteCount(payload);
-                            var buffer = ArrayPool<byte>.Shared.Rent(length + 2);
-                            try
-                            {
-                                Encoding.UTF8.GetBytes(payload, buffer.AsSpan(2));
-                                buffer[0] = (byte)(length / 256);
-                                buffer[1] = (byte)(length & 255);
+                            Encoding.UTF8.GetBytes(payload, buffer.AsSpan(2));
+                            buffer[0] = (byte)(length / 256);
+                            buffer[1] = (byte)(length & 255);
 
-                                await sender.WriteAsync(buffer, 0, length + 2, default).ConfigureAwait(false);
-                                await sender.FlushAsync(default).ConfigureAwait(false);
-                            }
-                            finally
-                            {
-                                ArrayPool<byte>.Shared.Return(buffer);
-                            }
+                            await sender.WriteAsync(buffer, 0, length + 2, default).ConfigureAwait(false);
+                            await sender.FlushAsync(default).ConfigureAwait(false);
+                        }
+                        finally
+                        {
+                            ArrayPool<byte>.Shared.Return(buffer);
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    throw;
                 }
             });
 
@@ -192,9 +176,9 @@ namespace KubeConnect.RunAdminProcess
         }
 
         private byte[] singleByteBuffer = new byte[2];
-        private object recieverTask;
-        private Task processCallbacks;
-        private Task processSending;
+        private object? recieverTask;
+        private Task? processCallbacks;
+        private Task? processSending;
 
         public async Task<int> ReadLengthAsync(Stream pipe, CancellationToken cancellationToken = default)
         {
