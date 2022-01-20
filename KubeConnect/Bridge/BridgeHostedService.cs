@@ -1,5 +1,4 @@
-﻿using CliWrap;
-using k8s;
+﻿using k8s;
 using k8s.Models;
 using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.Extensions.Hosting;

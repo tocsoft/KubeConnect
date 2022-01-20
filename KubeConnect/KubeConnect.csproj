@@ -28,7 +28,6 @@
 	</PropertyGroup>
 
 	<ItemGroup>
-		<PackageReference Include="CliWrap" Version="3.4.0" />
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
 		<PackageReference Include="KubernetesClient" Version="6.0.1" />
 		<PackageReference Include="MinVer" Version="2.5.0">
