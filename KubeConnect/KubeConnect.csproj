@@ -12,8 +12,8 @@
 		<PackageId>Tocsoft.KubeConnect.Tool</PackageId>
 		<IsPackable>true</IsPackable>
 		<LangVersion>latest</LangVersion>
-  		<RollForward>LatestMajor</RollForward>
-  		<Nullable>enable</Nullable>
+		<RollForward>LatestMajor</RollForward>
+		<Nullable>enable</Nullable>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(SelfContained)'=='true'">
@@ -22,7 +22,7 @@
 		<SelfContained>true</SelfContained>
 		<!-- <TrimMode>Link</TrimMode> -->
 		<TrimMode>copyused</TrimMode>
-		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract> 
+		<IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
 		<IncludeSymbols>false</IncludeSymbols>
 		<EmbedUntrackedSources>false</EmbedUntrackedSources>
 	</PropertyGroup>
@@ -31,15 +31,11 @@
 		<PackageReference Include="Microsoft.SourceLink.GitHub" Version="1.0.0" PrivateAssets="All" />
 		<PackageReference Include="KubernetesClient" Version="6.0.1" />
 		<PackageReference Include="MinVer" Version="2.5.0">
-		  <PrivateAssets>all</PrivateAssets>
-		  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
 		</PackageReference>
 		<PackageReference Include="PipeMessenger" Version="0.9.3" />
 		<PackageReference Include="Yarp.ReverseProxy" Version="1.0.0-preview.12.21328.2" />
-	</ItemGroup>
-
-	<ItemGroup>
-	  <!--<ProjectReference Include="..\KubernetesClient\KubernetesClient.csproj" />-->
 	</ItemGroup>
 
 </Project>
