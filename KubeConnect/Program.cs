@@ -109,7 +109,7 @@ Version {CurrentVersion}");
             var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
             if (parseArgs.LaunchBrowser)
             {
-                lifetime.ApplicationStarted.Register(() =>
+                lifetime?.ApplicationStarted.Register(() =>
                 {
                     if (!manager.IngressConfig.Enabled) return;
 
@@ -122,7 +122,7 @@ Version {CurrentVersion}");
                 });
             }
 
-            var tcs = new TaskCompletionSource<object>();
+            var tcs = new TaskCompletionSource<object?>();
             console.CancelKeyPress += delegate
             {
                 // cancel has been triggered, we can stop waiting
@@ -161,7 +161,7 @@ Version {CurrentVersion}");
                     //console.WriteErrorLine(msg);
                     //return 1;
                 }
-                catch (Exception e)
+                catch (Exception)
                 {
                     throw;
                 }
@@ -211,9 +211,14 @@ Version {CurrentVersion}");
                         }
 
                         var process = Process.Start(proceStartInfo);
-                        ChildProcessTracker.AddProcess(process);
-                        process.WaitForExit();
-                        return process.ExitCode;
+                        if (process != null)
+                        {
+                            ChildProcessTracker.AddProcess(process);
+                            process.WaitForExit();
+                            return process.ExitCode;
+                        }
+
+                        return -1;
                     }
                     else
                     {

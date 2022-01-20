@@ -3,6 +3,7 @@ using k8s.Models;
 using Renci.SshNet;
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -21,7 +22,7 @@ namespace KubeConnect
         private readonly string @namespace;
         private readonly IConsole console;
         private readonly Args args;
-       
+
         public ServiceManager(IKubernetes kubernetesClient, string @namespace, IConsole console, Args args)
         {
             this.kubernetesClient = kubernetesClient;
@@ -31,7 +32,7 @@ namespace KubeConnect
         }
 
         public IngressDetails IngressConfig { get; private set; } = new IngressDetails();
-        public List<ServiceDetails> Services { get; private set; }
+        public IEnumerable<ServiceDetails> Services { get; private set; } = Array.Empty<ServiceDetails>();
 
         public async Task LoadBindings()
         {
@@ -136,7 +137,7 @@ namespace KubeConnect
         public ServiceDetails GetService(string serviceName)
             => this.Services.Single(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
 
-        private async Task<V1Deployment> FindMatchingDeployment(ServiceDetails service)
+        private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails service)
         {
             var results = await kubernetesClient.ListNamespacedDeploymentAsync(service.Namespace);
             foreach (var dep in results.Items)
@@ -149,7 +150,7 @@ namespace KubeConnect
 
             return null;
         }
-        private async Task<V1Pod> FindInterceptionPod(ServiceDetails service)
+        private async Task<V1Pod?> FindInterceptionPod(ServiceDetails service)
         {
             var runningPods = (await kubernetesClient.ListNamespacedPodAsync(service.Namespace, labelSelector: "kubeconnect.bridge/ssh=true")).Items;
             foreach (var dep in runningPods)
@@ -299,23 +300,27 @@ namespace KubeConnect
         {
             //wait for 30 seconds for it to start
             var cts = new CancellationTokenSource(30000);
+            var lastPod = pod;
             while (!cts.IsCancellationRequested)
             {
                 var runningPods = (await kubernetesClient.ListNamespacedPodAsync(pod.Namespace())).Items;
-                var resultpod = runningPods.SingleOrDefault(x => x.Name().Equals(pod.Name(), StringComparison.OrdinalIgnoreCase));
-                if (resultpod.Status.Phase == "Running")
+                lastPod = runningPods.SingleOrDefault(x => x.Name().Equals(pod.Name(), StringComparison.OrdinalIgnoreCase));
+                if (lastPod?.Status.Phase == "Running")
                 {
-                    return resultpod;
+                    return lastPod;
                 }
             }
 
-            return null;
+            return lastPod ?? pod;
         }
 
         public async Task Intercept(ServiceDetails service)
         {
             var dep = await FindMatchingDeployment(service);
-            await DisableDeployment(dep);
+            if (dep != null)
+            {
+                await DisableDeployment(dep);
+            }
             await StartSshForward(service);
         }
 
@@ -328,7 +333,10 @@ namespace KubeConnect
             }
 
             var dep = await FindMatchingDeployment(service);
-            await EnableDeployment(dep);
+            if (dep != null)
+            {
+                await EnableDeployment(dep);
+            }
         }
 
         public async Task ReleaseAll()
@@ -375,11 +383,11 @@ namespace KubeConnect
     {
         public bool Enabled => Ingresses?.Any() == true;
 
-        public IPAddress AssignedAddress { get; init; }
+        public IPAddress AssignedAddress { get; init; } = IPAddress.None;
 
         public bool UseSsl { get; init; }
 
-        public IReadOnlyList<IngressEntry> Ingresses { get; init; }
+        public IReadOnlyList<IngressEntry> Ingresses { get; init; } = Array.Empty<IngressEntry>();
 
         public IEnumerable<string> HostNames => Ingresses.Select(X => X.HostName).Distinct();
 
@@ -388,33 +396,31 @@ namespace KubeConnect
 
     public class IngressEntry
     {
-        public string HostName { get; init; }
-        public string Address { get; init; }
-        public string ServiceName { get; init; }
+        public string HostName { get; init; } = "";
+        public string Address { get; init; } = "";
+        public string ServiceName { get; init; } = "";
         public int Port { get; init; }
-        public string Path { get; internal set; }
+        public string Path { get; internal set; } = "";
     }
 
     public class ServiceDetails
     {
-        public string ServiceName { get; init; }
+        public string ServiceName { get; init; } = string.Empty;
 
-        public string Namespace { get; init; }
+        public string Namespace { get; init; } = string.Empty;
 
-        public IReadOnlyDictionary<string, string> Selector { get; init; }
+        public IReadOnlyDictionary<string, string> Selector { get; init; } = new Dictionary<string, string>();
 
         public string StringSelector => string.Join(",", Selector.Select((s) => $"{s.Key}={s.Value}"));
 
-        public IPAddress AssignedAddress { get; init; }
+        public IPAddress AssignedAddress { get; init; } = IPAddress.Any;
 
-        public IReadOnlyList<(int listenPort, int destinationPort)> TcpPorts { get; init; }
+        public IReadOnlyList<(int listenPort, int destinationPort)> TcpPorts { get; init; } = Array.Empty<(int, int)>();
 
         public bool UpdateHostsFile { get; init; }
 
-        // mean that an additional portforward is added 
-        // the deployment is 
         public bool Bridge { get; init; }
 
-        public IReadOnlyList<(int remotePort, int localPort)> BridgedPorts { get; init; }
+        public IReadOnlyList<(int remotePort, int localPort)> BridgedPorts { get; init; } = Array.Empty<(int, int)>();
     }
 }

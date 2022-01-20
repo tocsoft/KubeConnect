@@ -91,12 +91,12 @@ namespace KubeConnect.PortForwarding
 
                 await Task.WhenAll(PushToPod(), PushToClient());
             }
-            catch (OperationCanceledException ex)
+            catch (OperationCanceledException)
             {
                 // this will be fine, means the connection was closed by one of the 2 ends
                 connection.Abort();
             }
-            catch (ConnectionResetException ex)
+            catch (ConnectionResetException)
             {
                 // connection was closed just die silently
                 //throw;
@@ -111,10 +111,10 @@ namespace KubeConnect.PortForwarding
 
     public class PortBinding
     {
-        public string Name { get; init; }
-        public string Namespace { get; init; }
-        public string Selector { get; init; }
-        public int TargetPort { get; init; }
+        public string Name { get; init; } = string.Empty;
+        public string Namespace { get; init; } = string.Empty;
+        public string Selector { get; init; } = string.Empty;
+        public int TargetPort { get; init; } 
     }
 
 }
