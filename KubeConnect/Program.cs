@@ -83,7 +83,36 @@ namespace KubeConnect
  | . \ |_| | |_) |  __/ |__| (_) | | | | | | |  __/ (__| |_ 
  |_|\_\__,_|_.__/ \___|\____\___/|_| |_|_| |_|\___|\___|\__|
                                                             
-Version {CurrentVersion}");
+Version {CurrentVersion}
+");
+            }
+
+            var mutex = new Mutex(false, $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499");
+            if (parseArgs.Action == Args.KubeConnectMode.Connect)
+            {
+                // skip the check if elivated as the host exe has already done
+                if (!parseArgs.Elevated)
+                {
+
+                    // only one instance per cluster is allowed past here
+                    var claimedMutex = mutex.WaitOne(1, false);
+                    if (!claimedMutex)
+                    {
+                        console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
+                        return -1;
+                    }
+                }
+            }
+            else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+            {
+                // should we not auto elevate and launch connect as required???
+                var claimedMutex = mutex.WaitOne(1, false);
+                if (claimedMutex)
+                {
+                    mutex.ReleaseMutex();
+                    console.WriteErrorLine("You must also be running a separate KubeConnect session in 'connect' mode to enable bridging across a service.");
+                    return -1;
+                }
             }
 
             if (parseArgs.RequireAdmin && !RootChecker.IsRoot())
@@ -91,9 +120,10 @@ Version {CurrentVersion}");
                 return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
             }
 
+            var config = KubernetesClientConfiguration.BuildDefaultConfig();
+
             var cts = new CancellationTokenSource();
 
-            var config = KubernetesClientConfiguration.BuildDefaultConfig();
             IKubernetes client = new Kubernetes(config);
             parseArgs.Namespace ??= config.Namespace ?? "default";
 
@@ -142,24 +172,29 @@ Version {CurrentVersion}");
                 try
                 {
                     console.WriteLine("Starting port forward!");
-                    //todo: disable all the bridge stuff for all services on first start as bridging requires a connect session to be running
+
+                    // we should be safe to do this here as we have a mutex claimed ensuring there is only one 'connect' running
+                    // once its started we should be safe to reverse the ssh server deployments read for exposing
+                    await manager.ReleaseAll();
                     await serverHost.RunAsync();
                 }
                 catch (IOException ex) when (ex.InnerException is Microsoft.AspNetCore.Connections.AddressInUseException ain)
                 {
-                    throw;
-                    //var msg = ex.Message;
-                    //if (manager.IngressConfig.Enabled)
-                    //{
-
-                    //}
-                    //msg = msg.Replace($"{manager.IngressIPAddress}", $"{manager.IngressHostNames.FirstOrDefault() ?? manager.IngressIPAddress.ToString()}");
-                    //foreach (var s in manager.ServiceAddresses)
-                    //{
-                    //    msg = msg.Replace($"{s.IPAddress}", $"{s.Service?.Metadata.Name ?? s.IPAddress.ToString()}");
-                    //}
-                    //console.WriteErrorLine(msg);
-                    //return 1;
+                    var msg = ex.Message;
+                    if (manager.IngressConfig.Enabled)
+                    {
+                        var host = manager.IngressConfig.HostNames.FirstOrDefault();
+                        if (host != null)
+                        {
+                            msg = msg.Replace($"{manager.IngressConfig.AssignedAddress}", host);
+                        }
+                    }
+                    foreach (var s in manager.Services)
+                    {
+                        msg = msg.Replace($"{s.AssignedAddress}", $"{s.ServiceName}");
+                    }
+                    console.WriteErrorLine(msg);
+                    return 1;
                 }
                 catch (Exception)
                 {
@@ -222,7 +257,7 @@ Version {CurrentVersion}");
                     }
                     else
                     {
-                        console.WriteLine("Hit Ctrl+C to stop bridging service into cluster.");
+                        console.WriteLine("\nHit Ctrl+C to stop bridging service into cluster.");
                         //wait for cancel
                         await tcs.Task;
                     }

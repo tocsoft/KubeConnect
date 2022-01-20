@@ -245,8 +245,8 @@ namespace KubeConnect
             pod = await AwaitPodRunning(pod);
             await AwaitOnlyMatchingPodRunning(service, pod);
             // wait pod count to become 1
-            var count = 10;
-            while (true)
+            var cts = new CancellationTokenSource(45000);
+            while (!cts.IsCancellationRequested)
             {
                 var client = new SshClient(service.ServiceName, "linuxserver.io", "password");
                 try
@@ -268,10 +268,9 @@ namespace KubeConnect
                     }
                     break;
                 }
-                catch when (count > 0)
+                catch when (!cts.IsCancellationRequested)
                 {
                     client?.Dispose();
-                    // ignore it 10 times and throw on the 10th
                 }
             }
         }
