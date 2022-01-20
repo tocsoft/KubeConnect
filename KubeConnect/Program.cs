@@ -1,5 +1,4 @@
 ﻿using k8s;
-using KubeConnect.Bridge;
 using KubeConnect.RunAdminProcess;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;

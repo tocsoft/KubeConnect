@@ -1,6 +1,5 @@
 ﻿using k8s;
 using k8s.Models;
-using KubeConnect.Bridge;
 using Renci.SshNet;
 using System;
 using System.Collections.Generic;
@@ -22,40 +21,7 @@ namespace KubeConnect
         private readonly string @namespace;
         private readonly IConsole console;
         private readonly Args args;
-        //private V1DeploymentList deploymentsList;
-        //private V1ServiceList? serviceList;
-        //private V1IngressList? ingressList;
-
-        //public IEnumerable<V1Ingress> IngressList => ingressList?.Items ?? Enumerable.Empty<V1Ingress>();
-        //public IEnumerable<string> IngressHostNames => IngressList?.SelectMany(x => x.Spec.Rules).Select(x => x.Host).Distinct() ?? Enumerable.Empty<string>();
-
-        //public IEnumerable<string> IngressAddresses
-        //{
-        //    get
-        //    {
-        //        foreach (var ingress in IngressList)
-        //        {
-        //            foreach (var r in ingress.Spec.Rules)
-        //            {
-        //                foreach (var p in r.Http.Paths)
-        //                {
-        //                    var ssl = ingress.Spec.Tls?.Any(x => x.Hosts.Contains(r.Host)) == true;
-        //                    var protocol = ssl ? "https" : "http";
-        //                    yield return $"{protocol}://{r.Host}{p.Path}";
-        //                }
-        //            }
-        //        }
-        //    }
-        //}
-
-        //public bool HasIngressesDefined => IngressList?.Any() == true;
-
-        //public IPAddress IngressIPAddress { get; }
-
-        //public IEnumerable<(V1Service Service, IPAddress IPAddress)> ServiceAddresses => serviceAddresses ?? Enumerable.Empty<(V1Service Service, IPAddress IPAddress)>();
-        //public IEnumerable<V1Service> Services => serviceList?.Items ?? Enumerable.Empty<V1Service>();
-        //public IEnumerable<V1Deployment> Deployments => deploymentsList?.Items ?? Enumerable.Empty<V1Deployment>();
-
+       
         public ServiceManager(IKubernetes kubernetesClient, string @namespace, IConsole console, Args args)
         {
             this.kubernetesClient = kubernetesClient;
