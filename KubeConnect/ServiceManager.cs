@@ -135,7 +135,7 @@ namespace KubeConnect
         }
 
         public ServiceDetails GetService(string serviceName)
-            => this.Services.Single(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+            => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
 
         private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails service)
         {
@@ -257,6 +257,10 @@ namespace KubeConnect
                     {
                         var port = new ForwardedPortRemote(IPAddress.Any, (uint)mappings.remotePort, IPAddress.Loopback, (uint)mappings.localPort);
                         client.AddForwardedPort(port);
+                        port.RequestReceived += (object? sender, Renci.SshNet.Common.PortForwardEventArgs e) =>
+                        {
+                            console.WriteLine($"Traffic redirected from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                        };
                         port.Start();
                     }
 

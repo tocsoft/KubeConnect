@@ -212,7 +212,15 @@ Version {CurrentVersion}
                     throw new Exception("Exactly 1 bridged service must be supplied");
                 }
 
-                var service = manager.GetService(parseArgs.BridgeMappings[0].ServiceName);
+                var serviceName = parseArgs.BridgeMappings[0].ServiceName;
+
+                var service = manager.GetService(serviceName);
+                if (service == null)
+                {
+                    console.WriteErrorLine($"Unable to find the service '{serviceName}'");
+                    return -1;
+                }
+
                 try
                 {
                     if (parseArgs.Action == Args.KubeConnectMode.Bridge)
