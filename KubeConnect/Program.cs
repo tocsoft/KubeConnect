@@ -250,7 +250,7 @@ Version {CurrentVersion}
 
                         foreach (var a in envVars)
                         {
-                            proceStartInfo.EnvironmentVariables.Add(a.Key, a.Value);
+                            proceStartInfo.Environment[a.Key] = a.Value;
                         }
 
                         var process = Process.Start(proceStartInfo);

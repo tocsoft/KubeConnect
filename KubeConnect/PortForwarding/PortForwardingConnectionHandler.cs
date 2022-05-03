@@ -30,12 +30,17 @@ namespace KubeConnect.PortForwarding
             var output = connection.Transport.Output;
 
             var binding = connection.Features.Get<PortBinding>();
+            if (binding == null)
+            {
+                throw new InvalidOperationException("PortBinding feature must be defined on the connection");
+            }
+
             // establish connection to cluster/pod
             // sync data to/from pod
 
             var pods = await kubernetesClient.ListNamespacedPodAsync(binding.Namespace, labelSelector: binding.Selector);
             var pod = pods.Items.Where(x => x.Status.Phase == "Running").FirstOrDefault();
-            if(pod == null)
+            if (pod == null)
             {
                 connection.Abort();
             }
@@ -114,7 +119,7 @@ namespace KubeConnect.PortForwarding
         public string Name { get; init; } = string.Empty;
         public string Namespace { get; init; } = string.Empty;
         public string Selector { get; init; } = string.Empty;
-        public int TargetPort { get; init; } 
+        public int TargetPort { get; init; }
     }
 
 }

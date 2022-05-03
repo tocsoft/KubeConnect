@@ -134,7 +134,7 @@ namespace KubeConnect
             this.Services = services;
         }
 
-        public ServiceDetails GetService(string serviceName)
+        public ServiceDetails? GetService(string serviceName)
             => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
 
         private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails service)
