@@ -119,8 +119,8 @@ Version {CurrentVersion}
             {
                 return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
             }
-
-            var config = KubernetesClientConfiguration.BuildDefaultConfig();
+            
+            var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
 
             var cts = new CancellationTokenSource();
 
@@ -334,5 +334,27 @@ Version {CurrentVersion}
 
                     webBuilder.UseStartup<Startup>();
                 });
+    }
+
+    public static class KubernetesClientConfigurationHelper
+    {
+        public static KubernetesClientConfiguration BuildConfig(string? kubeconfigPath = null, string? currentContext = null)
+        {
+            kubeconfigPath ??= KubernetesClientConfiguration.KubeConfigDefaultLocation;
+
+            if (File.Exists(kubeconfigPath))
+            {
+                return KubernetesClientConfiguration.BuildConfigFromConfigFile(kubeconfigPath, currentContext: currentContext);
+            }
+
+            if (KubernetesClientConfiguration.IsInCluster())
+            {
+                return KubernetesClientConfiguration.InClusterConfig();
+            }
+
+            var config = new KubernetesClientConfiguration();
+            config.Host = "http://localhost:8080";
+            return config;
+        }
     }
 }
