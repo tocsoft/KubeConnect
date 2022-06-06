@@ -31,7 +31,7 @@ namespace KubeConnect
                 "context",
                 "map",
                 "kubeconfig",
-                "envvar",
+                "env",
                 "working-directory"
             };
 
@@ -77,7 +77,7 @@ namespace KubeConnect
                     case "service":
                         BridgeMappings.Add(new BridgeMapping(argNext));
                         break;
-                    case "envvar":
+                    case "env":
                         EnvVars.Add(new EnvVarMapping(argNext));
                         break;
                     case "forward-mapped-only":
@@ -222,8 +222,7 @@ namespace KubeConnect
                     }
                     span = span.Slice(1);
                 }
-                var idx = span.IndexOf(':');
-                idx = idx > 0 ? idx : span.IndexOf('=');
+                var idx = span.IndexOf('=');
                 if (idx >= 0)
                 {
                     Value = new string(span.Slice(idx + 1));
