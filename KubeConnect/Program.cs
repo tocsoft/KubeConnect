@@ -119,7 +119,7 @@ Version {CurrentVersion}
             {
                 return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
             }
-            
+
             var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
 
             var cts = new CancellationTokenSource();
@@ -196,8 +196,9 @@ Version {CurrentVersion}
                     console.WriteErrorLine(msg);
                     return 1;
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
+                    console.WriteErrorLine(ex.ToString());
                     throw;
                 }
                 finally
@@ -269,6 +270,11 @@ Version {CurrentVersion}
                         //wait for cancel
                         await tcs.Task;
                     }
+                }
+                catch(Exception ex)
+                {
+                    console.WriteErrorLine(ex.ToString());
+                    throw;
                 }
                 finally
                 {

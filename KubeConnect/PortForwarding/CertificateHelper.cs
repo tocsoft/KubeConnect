@@ -13,72 +13,81 @@ namespace KubeConnect.PortForwarding
     {
         private const string autorityName = "KubeConnect Issuing Authority";
 
-        private static X509Certificate2 GetSigningAuthority()
+        private static X509Certificate2 GetSigningAuthority(DateTimeOffset expiryDate, bool recreate = false)
         {
-            X509Certificate2? certificate = null;
-            bool inStore = false;
-            // if windows load from cert store and return
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            static X509Certificate2 FindOrCreate(DateTimeOffset expiryDate, bool recreate = false)
             {
-                using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser, OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
-                var certificateSet = store.Certificates.Find(X509FindType.FindByIssuerName, autorityName, true);
-                var storeCert = certificateSet.Cast<X509Certificate2>().FirstOrDefault();
-                if (storeCert?.HasPrivateKey == true)
+                X509Certificate2? certificate = null;
+                // if windows load from cert store and return
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                 {
-                    certificate = storeCert;
-                    inStore = true;
+                    using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser, OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+                    var certificateSet = store.Certificates.Find(X509FindType.FindByIssuerName, autorityName, true);
+                    var storeCert = certificateSet.Cast<X509Certificate2>().FirstOrDefault();
+                    if (storeCert?.HasPrivateKey == true)
+                    {
+                        certificate = storeCert;
+                    }
                 }
-            }
 
-            var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var rootCertificatePath = Path.Combine(appData, "KubeConnect", "trusted.cert");
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+                var rootCertificatePath = Path.Combine(appData, "KubeConnect", "trusted.cert");
 
-            if (File.Exists(rootCertificatePath))
-            {
-                try
+                if (File.Exists(rootCertificatePath))
                 {
-                    certificate = (X509Certificate2)X509Certificate2.CreateFromCertFile(rootCertificatePath);
+                    try
+                    {
+                        certificate = (X509Certificate2)X509Certificate2.CreateFromCertFile(rootCertificatePath);
+                    }
+                    catch
+                    {
+                        File.Delete(rootCertificatePath);
+                    }
                 }
-                catch
+
+                if (certificate == null || recreate)
                 {
-                    File.Delete(rootCertificatePath);
-                }
-            }
+                    RSA parent = RSA.Create(4096);
 
-            if (certificate == null)
-            {
-                RSA parent = RSA.Create(4096);
+                    CertificateRequest parentReq = new CertificateRequest(
+                      $"CN={autorityName}",
+                      parent,
+                      HashAlgorithmName.SHA256,
+                      RSASignaturePadding.Pkcs1);
 
-                CertificateRequest parentReq = new CertificateRequest(
-                  $"CN={autorityName}",
-                  parent,
-                  HashAlgorithmName.SHA256,
-                  RSASignaturePadding.Pkcs1);
+                    parentReq.CertificateExtensions.Add(
+                        new X509BasicConstraintsExtension(true, false, 0, true));
 
-                parentReq.CertificateExtensions.Add(
-                    new X509BasicConstraintsExtension(true, false, 0, true));
+                    parentReq.CertificateExtensions.Add(
+                        new X509SubjectKeyIdentifierExtension(parentReq.PublicKey, false));
 
-                parentReq.CertificateExtensions.Add(
-                    new X509SubjectKeyIdentifierExtension(parentReq.PublicKey, false));
+                    var rootExpiryDate = DateTimeOffset.UtcNow.AddDays(365);
+                    if (rootExpiryDate < expiryDate)
+                    {
+                        rootExpiryDate = expiryDate.AddDays(90);
+                    }
 
-                certificate = parentReq.CreateSelfSigned(
-                  DateTimeOffset.UtcNow.AddDays(-45),
-                  DateTimeOffset.UtcNow.AddDays(365));
+                    var tempCert = parentReq.CreateSelfSigned(
+                      DateTimeOffset.UtcNow.AddDays(-45),
+                      rootExpiryDate);
 
-                var newCert = new X509Certificate2(certificate.Export(X509ContentType.Pkcs12), string.Empty, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+                    var newCertificate = new X509Certificate2(tempCert.Export(X509ContentType.Pkcs12), string.Empty, X509KeyStorageFlags.Exportable | X509KeyStorageFlags.MachineKeySet | X509KeyStorageFlags.PersistKeySet);
+                    if (!newCertificate.HasPrivateKey)
+                    {
+                        newCertificate = newCertificate.CopyWithPrivateKey(parent);
+                    }
 
-                certificate = newCert;
-                if (!inStore)
-                {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
                         using var store = new X509Store(StoreName.Root, StoreLocation.CurrentUser, OpenFlags.ReadWrite | OpenFlags.OpenExistingOnly | OpenFlags.MaxAllowed);
 
-                        if (!certificate.HasPrivateKey)
+                        // we must be forcing a recreate, delete the old cert and add the new one
+                        if (certificate != null)
                         {
-                            certificate = certificate.CopyWithPrivateKey(parent);
+                            store.Remove(certificate);
                         }
-                        store.Add(certificate);
+
+                        store.Add(newCertificate);
                         store.Close();
                     }
                     else
@@ -89,9 +98,25 @@ namespace KubeConnect.PortForwarding
                             Directory.CreateDirectory(dir);
                         }
 
-                        File.WriteAllBytes(rootCertificatePath, certificate.Export(X509ContentType.Pfx));
+                        File.WriteAllBytes(rootCertificatePath, newCertificate.Export(X509ContentType.Pfx));
                     }
+
+
+                    certificate = newCertificate;
                 }
+
+                return certificate;
+            }
+
+            var certificate = FindOrCreate(expiryDate, false);
+            if (certificate.NotAfter <= expiryDate.DateTime)
+            {
+                certificate = FindOrCreate(expiryDate, true);
+            }
+
+            if (certificate.NotAfter <= expiryDate.DateTime)
+            {
+                throw new Exception("Error generating signing authority, failed to create certificate with correct expiry date");
             }
 
             return certificate;
@@ -99,7 +124,9 @@ namespace KubeConnect.PortForwarding
 
         public static X509Certificate2 CreateCertificate(IEnumerable<string> hosts)
         {
-            using var parentCert = GetSigningAuthority();
+            var expiryDate = DateTimeOffset.UtcNow.AddDays(90);
+
+            using var parentCert = GetSigningAuthority(expiryDate);
 
             RSA rsa = RSA.Create(2048);
 
