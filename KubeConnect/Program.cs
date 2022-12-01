@@ -87,16 +87,16 @@ Version {CurrentVersion}
 ");
             }
 
-            var mutex = new Mutex(false, $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499");
+            const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
+            var semaphore = new Semaphore(1, 1, semaphoreName);
             if (parseArgs.Action == Args.KubeConnectMode.Connect)
             {
+
                 // skip the check if elivated as the host exe has already done
                 if (!parseArgs.Elevated)
                 {
-
-                    // only one instance per cluster is allowed past here
-                    var claimedMutex = mutex.WaitOne(1, false);
-                    if (!claimedMutex)
+                    var locker = new ProcessLock(semaphoreName);
+                    if (!locker.Locked)
                     {
                         console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
                         return -1;
@@ -106,10 +106,10 @@ Version {CurrentVersion}
             else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
             {
                 // should we not auto elevate and launch connect as required???
-                var claimedMutex = mutex.WaitOne(1, false);
-                if (claimedMutex)
+                using var locker = new ProcessLock(semaphoreName);
+
+                if (locker.Locked)
                 {
-                    mutex.ReleaseMutex();
                     console.WriteErrorLine("You must also be running a separate KubeConnect session in 'connect' mode to enable bridging across a service.");
                     return -1;
                 }
@@ -228,6 +228,13 @@ Version {CurrentVersion}
                     {
                         //start up the bridge stuff here
                         await manager.Intercept(service);
+                        var locker = new ProcessLock(semaphoreName);
+                        locker.OnLock(() =>
+                        {
+                            console.WriteLine("KubeConnect session in 'connect' shutdown, stopping bridge.");
+                            tcs.TrySetResult(null);
+                        });
+
                     }
 
                     var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;
@@ -271,7 +278,7 @@ Version {CurrentVersion}
                         await tcs.Task;
                     }
                 }
-                catch(Exception ex)
+                catch (Exception ex)
                 {
                     console.WriteErrorLine(ex.ToString());
                     throw;
