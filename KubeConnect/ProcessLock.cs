@@ -2,27 +2,34 @@
 using System.IO.Pipes;
 using System.IO;
 using System.Threading.Tasks;
+using Microsoft.Win32.SafeHandles;
+using System.Threading;
 
 namespace KubeConnect
 {
     public class ProcessLock : IDisposable
     {
-        private NamedPipeServerStream? pipe;
+        private Mutex? mutex;
         private readonly string name;
 
         public ProcessLock(string name)
         {
             this.name = name;
-            this.pipe = GetPipe();
+            this.mutex = GetLock();
         }
 
-        private NamedPipeServerStream? GetPipe()
+        private Mutex? GetLock()
         {
             try
             {
-                return new NamedPipeServerStream(name, PipeDirection.InOut, 1);
+                var mutex = new Mutex(false, $"Global\\{name}");
+                if (mutex.WaitOne(1))
+                {
+                    return mutex;
+                }
+                return null;
             }
-            catch (IOException)
+            catch(Exception ex)
             {
                 return null;
             }
@@ -34,10 +41,11 @@ namespace KubeConnect
             {
                 while (true)
                 {
-                    var pipe = GetPipe();
-                    if (pipe != null)
+                    var mutex = GetLock();
+                    if (mutex != null)
                     {
-                        pipe.Dispose();
+                        mutex.ReleaseMutex();
+                        mutex.Dispose();
                         callback();
                     }
 
@@ -46,12 +54,12 @@ namespace KubeConnect
             });
         }
 
-        public bool Locked => pipe != null;
+        public bool Locked => mutex != null;
 
         public void Dispose()
         {
-            pipe?.Dispose();
-            pipe = null;
+            mutex?.ReleaseMutex();
+            mutex = null;
         }
     }
 }
