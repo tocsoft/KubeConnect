@@ -88,7 +88,6 @@ Version {CurrentVersion}
             }
 
             const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
-            var semaphore = new Semaphore(1, 1, semaphoreName);
             if (parseArgs.Action == Args.KubeConnectMode.Connect)
             {
 
