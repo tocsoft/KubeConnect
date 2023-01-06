@@ -44,6 +44,7 @@ namespace KubeConnect.PortForwarding
                     options.Listen(manager.IngressConfig.AssignedAddress, 443, builder =>
                     {
                         builder.UseHttps(CertificateHelper.CreateCertificate(manager.IngressConfig.HostNames));
+                        builder.Protocols = HttpProtocols.Http1AndHttp2;
                     });
                 }
 
