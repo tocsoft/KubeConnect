@@ -4,6 +4,10 @@
       "commandName": "Project",
       "commandLineArgs": "-x minikube"
     },
+    "KubeConnect - bridge": {
+      "commandName": "Project",
+      "commandLineArgs": "bridge -service apphost"
+    },
     "KubeConnect-reduced": {
       "commandName": "Project",
       "commandLineArgs": "-x minikube -skip-hosts -http-only "

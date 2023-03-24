@@ -1,6 +1,9 @@
 ﻿using k8s;
+using KubeConnect.Hubs;
 using KubeConnect.RunAdminProcess;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -87,87 +90,87 @@ Version {CurrentVersion}
 ");
             }
 
-            const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
-            if (parseArgs.Action == Args.KubeConnectMode.Connect)
-            {
+            //const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
+            //if (parseArgs.Action == Args.KubeConnectMode.Connect)
+            //{
 
-                // skip the check if elivated as the host exe has already done
-                if (!parseArgs.Elevated)
-                {
-                    var locker = new ProcessLock(semaphoreName);
-                    if (!locker.Locked)
-                    {
-                        console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
-                        return -1;
-                    }
-                }
-            }
-            else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
-            {
-                // should we not auto elevate and launch connect as required???
-                using var locker = new ProcessLock(semaphoreName);
+            //    // skip the check if elivated as the host exe has already done
+            //    if (!parseArgs.Elevated)
+            //    {
+            //        var locker = new ProcessLock(semaphoreName);
+            //        if (!locker.Locked)
+            //        {
+            //            console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
+            //            return -1;
+            //        }
+            //    }
+            //}
+            //else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+            //{
+            //    // should we not auto elevate and launch connect as required???
+            //    using var locker = new ProcessLock(semaphoreName);
 
-                if (locker.Locked)
-                {
-                    console.WriteErrorLine("You must also be running a separate KubeConnect session in 'connect' mode to enable bridging across a service.");
-                    return -1;
-                }
-            }
-
-            if (parseArgs.RequireAdmin && !RootChecker.IsRoot())
-            {
-                return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
-            }
-
-            var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
-
-            var cts = new CancellationTokenSource();
-
-            IKubernetes client = new Kubernetes(config);
-            parseArgs.Namespace ??= config.Namespace ?? "default";
-
-            var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
-
-            var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
-            // ensure we load up configs form k8s
-            await manager.LoadBindings();
-            var builder = CreateHostBuilder(manager, console, client, parseArgs);
-
-            var serverHost = builder.Build();
-
-            var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
-            if (parseArgs.LaunchBrowser)
-            {
-                lifetime?.ApplicationStarted.Register(() =>
-                {
-                    if (!manager.IngressConfig.Enabled) return;
-
-                    var address = manager.IngressConfig.Addresses.FirstOrDefault();
-
-                    if (address != null)
-                    {
-                        OpenUrl(address);
-                    }
-                });
-            }
-
-            var tcs = new TaskCompletionSource<object?>();
-            console.CancelKeyPress += delegate
-            {
-                // cancel has been triggered, we can stop waiting
-                tcs.TrySetResult(null);
-
-                if (parseArgs.Action == Args.KubeConnectMode.Connect)
-                {
-                    console.WriteLine("Shutting down!");
-                    cts.Cancel();
-                    _ = serverHost.StopAsync();
-                }
-            };
+            //    if (locker.Locked)
+            //    {
+            //        console.WriteErrorLine("You must also be running a separate KubeConnect session in 'connect' mode to enable bridging across a service.");
+            //        return -1;
+            //    }
+            //}
 
 
             if (parseArgs.Action == Args.KubeConnectMode.Connect)
             {
+                if (parseArgs.RequireAdmin && !RootChecker.IsRoot())
+                {
+                    return await AdminRunner.RunProcessAsAdmin(parseArgs, console);
+                }
+
+                var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
+
+                var cts = new CancellationTokenSource();
+
+                IKubernetes client = new Kubernetes(config);
+                parseArgs.Namespace ??= config.Namespace ?? "default";
+
+                var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
+
+                var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
+                // ensure we load up configs form k8s
+                await manager.LoadBindings();
+                var builder = CreateHostBuilder(manager, console, client, parseArgs);
+
+                var serverHost = builder.Build();
+
+                var lifetime = serverHost.Services.GetService<IHostApplicationLifetime>();
+                if (parseArgs.LaunchBrowser)
+                {
+                    lifetime?.ApplicationStarted.Register(() =>
+                    {
+                        if (!manager.IngressConfig.Enabled) return;
+
+                        var address = manager.IngressConfig.Addresses.FirstOrDefault();
+
+                        if (address != null)
+                        {
+                            OpenUrl(address);
+                        }
+                    });
+                }
+
+                var tcs = new TaskCompletionSource<object?>();
+                console.CancelKeyPress += delegate
+                {
+                    // cancel has been triggered, we can stop waiting
+                    tcs.TrySetResult(null);
+
+                    if (parseArgs.Action == Args.KubeConnectMode.Connect)
+                    {
+                        console.WriteLine("Shutting down!");
+                        cts.Cancel();
+                        _ = serverHost.StopAsync();
+                    }
+                };
+
                 try
                 {
                     console.WriteLine("Starting port forward!");
@@ -213,27 +216,54 @@ Version {CurrentVersion}
                 }
 
                 var serviceName = parseArgs.BridgeMappings[0].ServiceName;
-
-                var service = manager.GetService(serviceName);
-                if (service == null)
-                {
-                    console.WriteErrorLine($"Unable to find the service '{serviceName}'");
-                    return -1;
-                }
-
+                var tcs = new TaskCompletionSource<object?>();
+                HubConnection? connection = null;
                 try
                 {
+                    connection = new HubConnectionBuilder()
+                            .WithUrl("http://localhost:10401", (c) =>
+                            {
+                            })
+                          .Build();
+
+                    connection.On("log", (string msg, bool isError) =>
+                    {
+                        if (isError)
+                        {
+                            console.WriteErrorLine(msg);
+                        }
+                        else
+                        {
+                            console.WriteLine(msg);
+                        }
+                    });
+
+                    try
+                    {
+                        await connection.StartAsync();
+                    }
+                    catch
+                    {
+                        console.WriteLine("KubeConnect session in 'connect' not running.");
+                        return -1;
+                    }
+
+                    // fail to connect then stuff not running
                     if (parseArgs.Action == Args.KubeConnectMode.Bridge)
                     {
-                        //start up the bridge stuff here
-                        await manager.Intercept(service);
-                        var locker = new ProcessLock(semaphoreName);
-                        locker.OnLock(() =>
+                        var ports = parseArgs.BridgeMappings
+                            .Where(x => x.ServiceName == serviceName)
+                            .ToDictionary(x => x.RemotePort, x => x.LocalPort);
+                        // handle default unmapped ports???
+
+                        connection.Closed += (e) =>
                         {
                             console.WriteLine("KubeConnect session in 'connect' shutdown, stopping bridge.");
                             tcs.TrySetResult(null);
-                        });
+                            return Task.CompletedTask;
+                        };
 
+                        await connection.InvokeAsync("StartServiceBridge", serviceName, ports);
                     }
 
                     var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;
@@ -245,7 +275,8 @@ Version {CurrentVersion}
                             throw new Exception("you must specify the process to start");
                         }
 
-                        var envVars = await manager.GetEnvironmentVariablesForServiceAsync(service);
+                        var settings = await connection.InvokeAsync<ServiceSettings>("GetServiceSettings", serviceName);
+                        var envVars = settings.EnvironmentVariables;
                         var exeArgs = parseArgs.UnprocessedArgs.AsSpan().Slice(1).ToArray();
                         var proceStartInfo = new ProcessStartInfo(parseArgs.UnprocessedArgs[0]);
                         proceStartInfo.WorkingDirectory = parseArgs.WorkingDirectory;
@@ -272,6 +303,12 @@ Version {CurrentVersion}
                     }
                     else
                     {
+                        console.CancelKeyPress += delegate
+                        {
+                            // cancel has been triggered, we can stop waiting
+                            tcs.TrySetResult(null);
+                        };
+
                         console.WriteLine("\nHit Ctrl+C to stop bridging service into cluster.");
                         //wait for cancel
                         await tcs.Task;
@@ -284,9 +321,9 @@ Version {CurrentVersion}
                 }
                 finally
                 {
-                    if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+                    if (connection != null)
                     {
-                        await manager.Release(service);
+                        await connection.StopAsync();
                     }
                 }
             }

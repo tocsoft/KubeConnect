@@ -1,6 +1,8 @@
 ﻿using k8s;
 using k8s.Models;
+using Microsoft.AspNetCore.SignalR;
 using Renci.SshNet;
+using Renci.SshNet.Messages;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -32,8 +34,15 @@ namespace KubeConnect
         }
 
         public IngressDetails IngressConfig { get; private set; } = new IngressDetails();
-        public IEnumerable<ServiceDetails> Services { get; private set; } = Array.Empty<ServiceDetails>();
 
+        public IEnumerable<ServiceDetails> Services { get; private set; } = Array.Empty<ServiceDetails>();
+        public IEnumerable<BridgeDetails> BridgedServices { get; private set; } = Array.Empty<BridgeDetails>();
+
+        public EventHandler<IEnumerable<BridgeDetails>>? OnBridgedServicesChanged;
+        public EventHandler<IEnumerable<ServiceDetails>>? OnServicesChanged;
+        public EventHandler<IngressDetails>? OnIngressChanged;
+
+        // todo call this on a schedule?
         public async Task LoadBindings()
         {
             var deploymentsList = await kubernetesClient.ListNamespacedDeploymentAsync(@namespace);
@@ -82,13 +91,18 @@ namespace KubeConnect
                         }
                     }
                 }
-
-                IngressConfig = new IngressDetails
+                var newDetails = new IngressDetails
                 {
                     AssignedAddress = ingressAddress,
                     UseSsl = args.UseSsl,
                     Ingresses = GetList().ToList(),
                 };
+
+                if (IngressConfig != newDetails)
+                {
+                    IngressConfig = newDetails;
+                    OnIngressChanged?.Invoke(this, newDetails);
+                }
             }
 
             ServiceDetails Create(IEnumerable<Args.BridgeMapping>? mappings, IPAddress address, V1Service service)
@@ -105,11 +119,7 @@ namespace KubeConnect
                     AssignedAddress = address,
                     Selector = new Dictionary<string, string>(service.Spec?.Selector ?? new Dictionary<string, string>()),
                     UpdateHostsFile = args.UpdateHosts,
-                    TcpPorts = ports,
-                    Bridge = mappings.Any(),
-                    BridgedPorts = mappings.Select(x => (
-                        x.RemotePort == -1 ? defaultPort.remote : x.RemotePort,
-                        x.LocalPort == -1 ? defaultPort.local : x.LocalPort)).ToList(),
+                    TcpPorts = ports
                 };
             }
 
@@ -131,7 +141,11 @@ namespace KubeConnect
                 services.Add(Create(bridge, address, s));
             }
 
-            this.Services = services;
+            if (this.Services == null || this.Services.Count() != services.Count || this.Services.Intersect(services).Count() != services.Count)
+            {
+                this.Services = services;
+                OnServicesChanged?.Invoke(this, services);
+            }
         }
 
         public ServiceDetails? GetService(string serviceName)
@@ -187,8 +201,14 @@ namespace KubeConnect
             }
         }
 
-        private async Task StartSshForward(ServiceDetails service)
+        private async Task StartSshForward(BridgeDetails bridgeDetails, ServiceDetails service)
         {
+            var logger = (string msg) =>
+            {
+                console.WriteLine(msg);
+                _ = bridgeDetails.Client.SendAsync("log", msg, false);
+            };
+
             var pod = await FindInterceptionPod(service);
             // clean up any old pods incase we have changes settigns
             if (pod != null)
@@ -196,7 +216,7 @@ namespace KubeConnect
                 await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
             }
 
-            var ports = service.BridgedPorts.Select(X => new V1ContainerPort
+            var ports = bridgeDetails.BridgedPorts.Select(X => new V1ContainerPort
             {
                 ContainerPort = X.remotePort,
                 Name = $"port-{X.remotePort}"
@@ -248,27 +268,27 @@ namespace KubeConnect
             var cts = new CancellationTokenSource(45000);
             while (!cts.IsCancellationRequested)
             {
-                var client = new SshClient(service.ServiceName, "linuxserver.io", "password");
+                var client = new SshClient(service.ServiceName, 2222, "linuxserver.io", "password");
                 try
                 {
                     client.ConnectionInfo.Timeout = TimeSpan.FromSeconds(4);
                     client.Connect();
-                    foreach (var mappings in service.BridgedPorts)
+                    foreach (var mappings in bridgeDetails.BridgedPorts)
                     {
                         var port = new ForwardedPortRemote(IPAddress.Any, (uint)mappings.remotePort, IPAddress.Loopback, (uint)mappings.localPort);
                         client.AddForwardedPort(port);
                         port.RequestReceived += (object? sender, Renci.SshNet.Common.PortForwardEventArgs e) =>
                         {
-                            console.WriteLine($"Traffic redirected from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                            logger($"Traffic redirected from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
                         };
                         port.Start();
                     }
 
                     // if they all started report it to the console
                     // maybe should be handled in program??
-                    foreach (var mappings in service.BridgedPorts)
+                    foreach (var mappings in bridgeDetails.BridgedPorts)
                     {
-                        console.WriteLine($"Redirecting traffic from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                        logger($"Redirecting traffic from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
                     }
                     break;
                 }
@@ -317,18 +337,66 @@ namespace KubeConnect
             return lastPod ?? pod;
         }
 
-        public async Task Intercept(ServiceDetails service)
+        public async Task Intercept(ServiceDetails service, IReadOnlyList<(int remotePort, int localPort)> mappings, string connectionId, IClientProxy clientProxy)
         {
+            if (BridgedServices.Any(x => x.ServiceName.Equals(service.ServiceName, StringComparison.OrdinalIgnoreCase)
+                                        && x.Namespace.Equals(service.Namespace, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new Exception("Service already bridged");
+            }
+
+            var defaultPort = service.TcpPorts.FirstOrDefault();
+            var bridgeDetails = new BridgeDetails()
+            {
+                ServiceName = service.ServiceName,
+                Namespace = service.Namespace,
+                ConnectionId = connectionId,
+                Client = clientProxy,
+                BridgedPorts = mappings.Select(x => (
+                     x.remotePort == -1 ? defaultPort.listenPort : x.remotePort,
+                     x.localPort == -1 ? defaultPort.destinationPort : x.localPort)).ToList()
+            };
+
+            BridgedServices = BridgedServices.Concat(new[] { bridgeDetails }).ToArray();
+            OnBridgedServicesChanged?.Invoke(this, BridgedServices);
+
             var dep = await FindMatchingDeployment(service);
             if (dep != null)
             {
                 await DisableDeployment(dep);
             }
-            await StartSshForward(service);
+            await StartSshForward(bridgeDetails, service);
+        }
+
+        public async Task Release(string connectionId)
+        {
+            var services = this.BridgedServices.Where(x => x.ConnectionId == connectionId);
+            foreach (var service in services)
+            {
+                await Release(service);
+            }
+        }
+
+        public Task Release(BridgeDetails bridgeDetails)
+        {
+            var service = this.Services.FirstOrDefault(x => x.ServiceName == bridgeDetails.ServiceName && x.Namespace == bridgeDetails.Namespace);
+            if (service == null)
+            {
+                throw new Exception($"Unable to find the service '{bridgeDetails.ServiceName}'");
+            }
+
+            return Release(service);
         }
 
         public async Task Release(ServiceDetails service)
         {
+            var details = BridgedServices.FirstOrDefault(x => x.ServiceName.Equals(service.ServiceName, StringComparison.OrdinalIgnoreCase) && x.Namespace.Equals(service.Namespace, StringComparison.OrdinalIgnoreCase));
+            if (details != null)
+            {
+                BridgedServices = BridgedServices.Where(x => x != details).ToArray();
+                OnBridgedServicesChanged?.Invoke(this, BridgedServices);
+            }
+
             var pod = await FindInterceptionPod(service);
             if (pod != null)
             {
@@ -380,50 +448,5 @@ namespace KubeConnect
 
             return fromCluster;
         }
-    }
-
-    public class IngressDetails
-    {
-        public bool Enabled => Ingresses?.Any() == true;
-
-        public IPAddress AssignedAddress { get; init; } = IPAddress.None;
-
-        public bool UseSsl { get; init; }
-
-        public IReadOnlyList<IngressEntry> Ingresses { get; init; } = Array.Empty<IngressEntry>();
-
-        public IEnumerable<string> HostNames => Ingresses.Select(X => X.HostName).Distinct();
-
-        public IEnumerable<string> Addresses => Ingresses.Select(X => X.Address).Distinct();
-    }
-
-    public class IngressEntry
-    {
-        public string HostName { get; init; } = "";
-        public string Address { get; init; } = "";
-        public string ServiceName { get; init; } = "";
-        public int Port { get; init; }
-        public string Path { get; internal set; } = "";
-    }
-
-    public class ServiceDetails
-    {
-        public string ServiceName { get; init; } = string.Empty;
-
-        public string Namespace { get; init; } = string.Empty;
-
-        public IReadOnlyDictionary<string, string> Selector { get; init; } = new Dictionary<string, string>();
-
-        public string StringSelector => string.Join(",", Selector.Select((s) => $"{s.Key}={s.Value}"));
-
-        public IPAddress AssignedAddress { get; init; } = IPAddress.Any;
-
-        public IReadOnlyList<(int listenPort, int destinationPort)> TcpPorts { get; init; } = Array.Empty<(int, int)>();
-
-        public bool UpdateHostsFile { get; init; }
-
-        public bool Bridge { get; init; }
-
-        public IReadOnlyList<(int remotePort, int localPort)> BridgedPorts { get; init; } = Array.Empty<(int, int)>();
     }
 }

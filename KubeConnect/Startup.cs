@@ -15,6 +15,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using Yarp.ReverseProxy.Configuration;
+using KubeConnect.Hubs;
 
 namespace KubeConnect
 {
@@ -31,6 +32,7 @@ namespace KubeConnect
         {
             services.AddReverseProxy();
             services.AddSingleton<IProxyConfigProvider, IngressProxyConfig>();
+            services.AddSignalR();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -55,6 +57,8 @@ namespace KubeConnect
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapReverseProxy();
+                endpoints.MapHub<BridgeHub>("")
+                    .RequireHost("localhost");
             });
         }
     }

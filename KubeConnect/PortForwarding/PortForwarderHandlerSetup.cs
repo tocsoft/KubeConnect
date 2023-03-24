@@ -34,6 +34,7 @@ namespace KubeConnect.PortForwarding
         public void Configure(KestrelServerOptions options)
         {
             options.ApplicationServices = serviceProvider;
+            options.Listen(IPAddress.Loopback, 10401);
 
             if (manager.IngressConfig.Enabled)
             {
@@ -71,7 +72,7 @@ namespace KubeConnect.PortForwarding
                 {
                     // no real harm in always doing this
                     // add in the ssh port to allow for bridge injection
-                    var sshendpoint = new IPEndPoint(service.AssignedAddress, 22);
+                    var sshendpoint = new IPEndPoint(service.AssignedAddress, 2222);
                     options.Listen(sshendpoint, builder =>
                     {
                         var binding = new PortBinding()
