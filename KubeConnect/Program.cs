@@ -11,6 +11,8 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.NetworkInformation;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
@@ -20,6 +22,7 @@ namespace KubeConnect
 {
     class Program
     {
+        public static int MainPort = 10401;
         public static string CurrentVersion
         {
             get
@@ -90,21 +93,27 @@ Version {CurrentVersion}
 ");
             }
 
-            //const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
-            //if (parseArgs.Action == Args.KubeConnectMode.Connect)
-            //{
 
-            //    // skip the check if elivated as the host exe has already done
-            //    if (!parseArgs.Elevated)
-            //    {
-            //        var locker = new ProcessLock(semaphoreName);
-            //        if (!locker.Locked)
-            //        {
-            //            console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
-            //            return -1;
-            //        }
-            //    }
-            //}
+            const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
+            if (parseArgs.Action == Args.KubeConnectMode.Connect)
+            {
+                if (!CheckAvailableServerPort(MainPort))
+                {
+                    console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
+                    return -1;
+                }
+
+                //// skip the check if elivated as the host exe has already done
+                //if (!parseArgs.Elevated)
+                //{
+                //    var locker = new ProcessLock(semaphoreName);
+                //    if (!locker.Locked)
+                //    {
+                //        console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
+                //        return -1;
+                //    }
+                //}
+            }
             //else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
             //{
             //    // should we not auto elevate and launch connect as required???
@@ -221,7 +230,7 @@ Version {CurrentVersion}
                 try
                 {
                     connection = new HubConnectionBuilder()
-                            .WithUrl("http://localhost:10401", (c) =>
+                            .WithUrl($"http://localhost:{Program.MainPort}", (c) =>
                             {
                             })
                           .Build();
@@ -330,7 +339,28 @@ Version {CurrentVersion}
 
             return 0;
         }
+        private static bool CheckAvailableServerPort(int port)
+        {
+            bool isAvailable = true;
 
+            // Evaluate current system tcp connections. This is the same information provided
+            // by the netstat command line application, just in .Net strongly-typed object
+            // form.  We will look through the list, and if our port we would like to use
+            // in our TcpClient is occupied, we will set isAvailable to false.
+            IPGlobalProperties ipGlobalProperties = IPGlobalProperties.GetIPGlobalProperties();
+            IPEndPoint[] tcpConnInfoArray = ipGlobalProperties.GetActiveTcpListeners();
+
+            foreach (IPEndPoint endpoint in tcpConnInfoArray)
+            {
+                if (endpoint.Port == port)
+                {
+                    isAvailable = false;
+                    break;
+                }
+            }
+
+            return isAvailable;
+        }
         private static void OpenUrl(string url)
         {
             try
@@ -405,5 +435,6 @@ Version {CurrentVersion}
             config.Host = "http://localhost:8080";
             return config;
         }
+
     }
 }
