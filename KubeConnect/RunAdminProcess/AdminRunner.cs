@@ -72,9 +72,12 @@ namespace KubeConnect.RunAdminProcess
                 }
                 catch
                 {
-                    console.WriteErrorLine("Error: we require running as administrator");
-                    Environment.Exit(1);
-                    return 1;
+                    if (!processCts.Token.IsCancellationRequested)
+                    {
+                        console.WriteErrorLine("Error: we require running as administrator");
+                        Environment.Exit(1);
+                        return 1;
+                    }
                 }
             }
             else
