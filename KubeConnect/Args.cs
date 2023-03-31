@@ -86,6 +86,9 @@ namespace KubeConnect
                     case "working-directory":
                         WorkingDirectory = Path.GetFullPath(argNext);
                         break;
+                    case "trace-logs":
+                        EnableTraceLogs = true;
+                        break;
                     default:
                         // capture unknown args
                         if (!string.IsNullOrWhiteSpace(arg))
@@ -180,6 +183,7 @@ namespace KubeConnect
             }
         }
 
+        public bool EnableTraceLogs { get; set; } = false;
         public string? Namespace { get; set; }
         public string? KubeconfigFile { get; private set; }
         public string? Context { get; private set; }

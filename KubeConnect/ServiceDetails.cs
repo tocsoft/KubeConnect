@@ -2,6 +2,9 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 
 namespace KubeConnect
@@ -17,6 +20,51 @@ namespace KubeConnect
         public IReadOnlyList<(int remotePort, int localPort)> BridgedPorts { get; init; } = Array.Empty<(int, int)>();
 
         public IClientProxy Client { get; internal set; }
+
+        object locker = new object();
+        StringBuilder builder = new StringBuilder();
+        StringBuilder builderAlt = new StringBuilder();
+        internal void Log(string msg)
+        {
+            lock (locker)
+            {
+                if (builder.Length > 0)
+                {
+                    builder.AppendLine();
+                }
+                builder.Append(msg);
+            }
+
+        }
+        SemaphoreSlim semaphore = new SemaphoreSlim(1);
+        public async Task FlushLogs()
+        {
+            StringBuilder RotateLogBuffers()
+            {
+                lock (locker)
+                {
+                    var current = builder;
+                    builder = builderAlt;
+                    builderAlt = current;
+                    return current;
+                }
+            }
+
+            await semaphore.WaitAsync();
+            try
+            {
+                var currentBuffers = RotateLogBuffers();
+                if (currentBuffers.Length > 0)
+                {
+                    await Client.SendAsync("log", currentBuffers.ToString(), false);
+                    currentBuffers.Clear();
+                }
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        }
     }
 
     public class ServiceDetails

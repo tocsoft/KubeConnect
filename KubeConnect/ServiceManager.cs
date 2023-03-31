@@ -201,12 +201,52 @@ namespace KubeConnect
             }
         }
 
+        Task logWriter;
+        private void EnsureLogWriterRunning()
+        {
+            if (!BridgedServices.Any())
+            {
+                return;
+            }
+
+            if (logWriter == null)
+            {
+                logWriter = Task.Run(async () =>
+                {
+                    while (true)
+                    {
+                        try
+                        {
+                            foreach (var s in BridgedServices.ToList())
+                            {
+                                try
+                                {
+                                    await s.FlushLogs();
+                                }
+                                catch
+                                {
+                                    console.WriteErrorLine($"Failed to flush logs for {s.ServiceName} bridge");
+                                }
+                            }
+                        }
+                        catch
+                        {
+                        }
+                        await Task.Delay(250);
+                    }
+                });
+            }
+        }
+
         private async Task StartSshForward(BridgeDetails bridgeDetails, ServiceDetails service)
         {
+            EnsureLogWriterRunning();
+
             var logger = (string msg) =>
             {
                 console.WriteLine(msg);
-                _ = bridgeDetails.Client.SendAsync("log", msg, false);
+
+                bridgeDetails.Log(msg);
             };
 
             var pod = await FindInterceptionPod(service);
@@ -221,6 +261,7 @@ namespace KubeConnect
                 ContainerPort = X.remotePort,
                 Name = $"port-{X.remotePort}"
             }).ToList();
+
             ports.Add(new V1ContainerPort
             {
                 ContainerPort = 2222,
@@ -279,7 +320,14 @@ namespace KubeConnect
                         client.AddForwardedPort(port);
                         port.RequestReceived += (object? sender, Renci.SshNet.Common.PortForwardEventArgs e) =>
                         {
-                            logger($"Traffic redirected from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                            try
+                            {
+                                logger($"Traffic redirected from {service.ServiceName}:{mappings.remotePort} to localhost:{mappings.localPort}");
+                            }
+                            catch
+                            {
+
+                            }
                         };
                         port.Start();
                     }
@@ -368,12 +416,21 @@ namespace KubeConnect
             await StartSshForward(bridgeDetails, service);
         }
 
+        private SemaphoreSlim semaphore = new SemaphoreSlim(1);
         public async Task Release(string connectionId)
         {
-            var services = this.BridgedServices.Where(x => x.ConnectionId == connectionId);
-            foreach (var service in services)
+            await semaphore.WaitAsync();
+            try
             {
-                await Release(service);
+                var services = this.BridgedServices.Where(x => x.ConnectionId == connectionId).ToList();
+                foreach (var service in services)
+                {
+                    await Release(service);
+                }
+            }
+            finally
+            {
+                semaphore.Release();
             }
         }
 
@@ -390,11 +447,12 @@ namespace KubeConnect
 
         public async Task Release(ServiceDetails service)
         {
-            var details = BridgedServices.FirstOrDefault(x => x.ServiceName.Equals(service.ServiceName, StringComparison.OrdinalIgnoreCase) && x.Namespace.Equals(service.Namespace, StringComparison.OrdinalIgnoreCase));
-            if (details != null)
+            var details = BridgedServices.Where(x => x.ServiceName.Equals(service.ServiceName, StringComparison.OrdinalIgnoreCase) && x.Namespace.Equals(service.Namespace, StringComparison.OrdinalIgnoreCase)).ToList();
+
+            if (details.Any())
             {
-                BridgedServices = BridgedServices.Where(x => x != details).ToArray();
-                OnBridgedServicesChanged?.Invoke(this, BridgedServices);
+                BridgedServices = BridgedServices.Where(x => !details.Contains(x)).ToArray();
+                console.WriteLine($"Shutting down bridge for {service.ServiceName}");
             }
 
             var pod = await FindInterceptionPod(service);
@@ -407,6 +465,10 @@ namespace KubeConnect
             if (dep != null)
             {
                 await EnableDeployment(dep);
+            }
+            if (details != null)
+            {
+                OnBridgedServicesChanged?.Invoke(this, BridgedServices);
             }
         }
 

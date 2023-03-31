@@ -3,16 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Hosting;
 
 namespace KubeConnect.Hubs
 {
     public class BridgeHub : Hub
     {
         private readonly ServiceManager serviceManager;
+        private readonly IHostApplicationLifetime hostApplicationLifetime;
 
-        public BridgeHub(ServiceManager serviceManager)
+        public BridgeHub(ServiceManager serviceManager, IHostApplicationLifetime hostApplicationLifetime)
         {
             this.serviceManager = serviceManager;
+            this.hostApplicationLifetime = hostApplicationLifetime;
         }
 
         public override Task OnConnectedAsync()
@@ -22,7 +25,10 @@ namespace KubeConnect.Hubs
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
-            await serviceManager.Release(Context.ConnectionId);
+            if (!hostApplicationLifetime.ApplicationStopping.IsCancellationRequested)
+            {
+                await serviceManager.Release(Context.ConnectionId);
+            }
 
             // when disconnecting kill bridge
             await base.OnDisconnectedAsync(exception);
@@ -53,7 +59,7 @@ namespace KubeConnect.Hubs
             {
                 throw new Exception($"Unable to find the service '{serviceName}'");
             }
-            
+
             // bridge logging should be a write to the group `$"Bridge:{service.ServiceName}:{service.Namespace}"`
             await serviceManager.Intercept(service, ports.Select(x => (x.Key, x.Value)).ToList(), this.Context.ConnectionId, this.Clients.Client(this.Context.ConnectionId));
         }

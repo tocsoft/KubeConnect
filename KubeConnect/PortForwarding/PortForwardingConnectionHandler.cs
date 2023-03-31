@@ -28,7 +28,7 @@ namespace KubeConnect.PortForwarding
         {
             var input = connection.Transport.Input;
             var output = connection.Transport.Output;
-
+            
             var binding = connection.Features.Get<PortBinding>();
             if (binding == null)
             {
@@ -43,6 +43,7 @@ namespace KubeConnect.PortForwarding
             if (pod == null)
             {
                 connection.Abort();
+                return;
             }
 
             logger.LogInformation("[{ConnectionID}] Opening connection for {ServiceName}:{ServicePort} to {PodName}:{PodPort}", connection.ConnectionId, binding.Name, (connection.LocalEndPoint as IPEndPoint)?.Port, pod.Name(), binding.TargetPort);
@@ -67,7 +68,7 @@ namespace KubeConnect.PortForwarding
                 {
                     while (true)
                     {
-                        var result = await input.ReadAsync();
+                        var result = await input.ReadAsync(connection.ConnectionClosed);
 
                         foreach (var buffer in result.Buffer)
                         {
@@ -82,7 +83,7 @@ namespace KubeConnect.PortForwarding
                 {
                     while (true)
                     {
-                        var result = await podOutput.ReadAsync();
+                        var result = await podOutput.ReadAsync(connection.ConnectionClosed);
 
                         foreach (var buffer in result.Buffer)
                         {

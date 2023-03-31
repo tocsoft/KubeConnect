@@ -6,14 +6,16 @@ namespace KubeConnect
     public partial class IConsoleLogProvider : ILoggerProvider
     {
         private readonly IConsole console;
+        private readonly Args args;
 
-        public IConsoleLogProvider(IConsole console)
+        public IConsoleLogProvider(IConsole console, Args args)
         {
             this.console = console;
+            this.args = args;
         }
 
         public ILogger CreateLogger(string categoryName)
-            => new IConsoleLoggger(categoryName, console);
+            => new IConsoleLoggger(categoryName, console, this.args.EnableTraceLogs);
 
         public void Dispose()
         {
@@ -21,12 +23,15 @@ namespace KubeConnect
 
         public class IConsoleLoggger : ILogger, IDisposable
         {
-            public IConsoleLoggger(string category, IConsole console)
+            public IConsoleLoggger(string category, IConsole console, bool traceLogs)
             {
+                this.traceLogs = traceLogs;
                 Category = category;
                 this.console = console;
                 this.internalLogs = category.StartsWith("KubeConnect");
             }
+
+            private readonly bool traceLogs;
 
             public string Category { get; }
 
@@ -45,6 +50,11 @@ namespace KubeConnect
 
             public bool IsEnabled(LogLevel logLevel)
             {
+                if (traceLogs)
+                {
+                    return true;
+                }
+
                 if (internalLogs)
                 {
                     return logLevel >= LogLevel.Debug;
