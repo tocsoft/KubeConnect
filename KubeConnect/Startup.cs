@@ -30,21 +30,6 @@ namespace KubeConnect
         {
             app.UseRouting();
 
-            app.Use((context, nxt) =>
-            {
-                if (context.Request.Method == HttpMethods.Connect && context.Request.Protocol != "HTTP/1.1")
-                {
-                    var resetFeature = context.Features.Get<IHttpResetFeature>();
-                    if (resetFeature != null)
-                    {
-                        //https://www.rfc-editor.org/rfc/rfc7540#page-51
-                        //HTTP_1_1_REQUIRED (0xd):  The endpoint requires that HTTP/1.1 be used instead of HTTP/2.
-                        resetFeature.Reset(errorCode: 0xd);
-                        return Task.CompletedTask;
-                    }
-                }
-                return nxt();
-            });
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapReverseProxy();
