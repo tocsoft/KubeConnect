@@ -1,9 +1,6 @@
 ﻿using k8s;
-using KubeConnect.Hubs;
 using KubeConnect.RunAdminProcess;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.SignalR;
-using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -17,6 +14,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Renci.SshNet;
+using k8s.Util.Common;
+using System.Net.Http;
 
 namespace KubeConnect
 {
@@ -224,116 +224,156 @@ Version {CurrentVersion}
                     throw new Exception("Exactly 1 bridged service must be supplied");
                 }
 
+                var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
                 var serviceName = parseArgs.BridgeMappings[0].ServiceName;
                 var tcs = new TaskCompletionSource<object?>();
-                HubConnection? connection = null;
-                try
+
+                IKubernetes client = new Kubernetes(config);
+                parseArgs.Namespace ??= config.Namespace ?? "default";
+
+                var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
+
+                var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
+                // ensure we load up configs form k8s
+                await manager.LoadBindings();
+
+                var service = manager.GetService(serviceName);
+
+                // fail to connect then stuff not running
+                if (parseArgs.Action == Args.KubeConnectMode.Bridge)
                 {
-                    connection = new HubConnectionBuilder()
-                            .WithUrl($"http://localhost:{Program.MainPort}", (c) =>
+                    // lets call home first to see if the conenct server is running
+
+                    var response = await new HttpClient()
+                        .GetAsync($"http://localhost:{MainPort}/status");
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
+                        return -1;
+                    }
+
+                    var ports = parseArgs.BridgeMappings
+                    .Where(x => x.ServiceName == serviceName);
+
+                    var defaultPort = service.TcpPorts.FirstOrDefault();
+                    var bridgePorts = ports.Select(x => (
+                        RemotePort: x.RemotePort == -1 ? defaultPort.listenPort : x.RemotePort,
+                        LocalPort: x.LocalPort == -1 ? defaultPort.destinationPort : x.LocalPort)).ToList();
+
+                    // handle default unmapped ports???
+
+                    var cts = new CancellationTokenSource(45000);
+                    SshClient sshClient = null;
+                    while (!cts.IsCancellationRequested)
+                    {
+                        sshClient = new SshClient(serviceName, 2222, "linuxserver.io", "password");
+                        try
+                        {
+                            sshClient.ConnectionInfo.Timeout = TimeSpan.FromSeconds(4);
+                            sshClient.Connect();
+
+                            foreach (var mappings in bridgePorts)
                             {
-                            })
-                          .Build();
+                                var port = new ForwardedPortRemote(IPAddress.Any, (uint)mappings.RemotePort, IPAddress.Loopback, (uint)mappings.LocalPort);
+                                sshClient.AddForwardedPort(port);
+                                port.RequestReceived += (object? sender, Renci.SshNet.Common.PortForwardEventArgs e) =>
+                                {
+                                    try
+                                    {
+                                        console.WriteLine($"Traffic redirected from {service.ServiceName}:{mappings.RemotePort} to localhost:{mappings.LocalPort}");
+                                    }
+                                    catch
+                                    {
 
-                    connection.On("log", (string msg, bool isError) =>
-                    {
-                        if (isError)
-                        {
-                            console.WriteErrorLine(msg);
+                                    }
+                                };
+                                port.Start();
+                            }
+
+                            // if they all started report it to the console
+                            // maybe should be handled in program??
+                            foreach (var mappings in bridgePorts)
+                            {
+                                console.WriteLine($"Redirecting traffic from {service.ServiceName}:{mappings.RemotePort} to localhost:{mappings.LocalPort}");
+                            }
+                            break;
                         }
-                        else
+                        catch when (!cts.IsCancellationRequested)
                         {
-                            console.WriteLine(msg);
+                            client?.Dispose();
                         }
-                    });
-
-                    try
-                    {
-                        await connection.StartAsync();
-                    }
-                    catch
-                    {
-                        console.WriteLine("KubeConnect session in 'connect' not running.");
-                        return -1;
                     }
 
-                    // fail to connect then stuff not running
-                    if (parseArgs.Action == Args.KubeConnectMode.Bridge)
+                    if (sshClient != null)
                     {
-                        var ports = parseArgs.BridgeMappings
-                            .Where(x => x.ServiceName == serviceName)
-                            .ToDictionary(x => x.RemotePort, x => x.LocalPort);
-                        // handle default unmapped ports???
-
-                        connection.Closed += (e) =>
+                        sshClient.ErrorOccurred += (s, e) =>
                         {
-                            console.WriteLine("KubeConnect session in 'connect' shutdown, stopping bridge.");
                             tcs.TrySetResult(null);
-                            return Task.CompletedTask;
+                            Console.Error.WriteLine("Bridge connection error, shutting down");
                         };
-
-                        await connection.InvokeAsync("StartServiceBridge", serviceName, ports);
-                    }
-
-                    var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;
-
-                    if (runexe)
-                    {
-                        if (parseArgs.UnprocessedArgs.Length == 0)
-                        {
-                            throw new Exception("you must specify the process to start");
-                        }
-
-                        var settings = await connection.InvokeAsync<ServiceSettings>("GetServiceSettings", serviceName);
-                        var envVars = settings.EnvironmentVariables;
-                        var exeArgs = parseArgs.UnprocessedArgs.AsSpan().Slice(1).ToArray();
-                        var proceStartInfo = new ProcessStartInfo(parseArgs.UnprocessedArgs[0]);
-                        proceStartInfo.WorkingDirectory = parseArgs.WorkingDirectory;
-
-                        foreach (var a in exeArgs)
-                        {
-                            proceStartInfo.ArgumentList.Add(a);
-                        }
-
-                        foreach (var a in envVars)
-                        {
-                            proceStartInfo.Environment[a.Key] = a.Value;
-                        }
-
-                        var process = Process.Start(proceStartInfo);
-                        if (process != null)
-                        {
-                            ChildProcessTracker.AddProcess(process);
-                            process.WaitForExit();
-                            return process.ExitCode;
-                        }
-
-                        return -1;
                     }
                     else
                     {
-                        console.CancelKeyPress += delegate
-                        {
-                            // cancel has been triggered, we can stop waiting
-                            tcs.TrySetResult(null);
-                        };
+                        Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
+                        return -1;
+                    }
 
-                        console.WriteLine("\nHit Ctrl+C to stop bridging service into cluster.");
-                        //wait for cancel
-                        await tcs.Task;
-                    }
+                    //connection.Closed += (e) =>
+                    //{
+                    //    console.WriteLine("KubeConnect session in 'connect' shutdown, stopping bridge.");
+                    //    tcs.TrySetResult(null);
+                    //    return Task.CompletedTask;
+                    //};
+
+                    //await connection.InvokeAsync("StartServiceBridge", serviceName, ports);
                 }
-                catch (Exception ex)
+
+                var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;
+
+                if (runexe)
                 {
-                    console.WriteErrorLine(ex.ToString());
-                    throw;
-                }
-                finally
-                {
-                    if (connection != null)
+                    if (parseArgs.UnprocessedArgs.Length == 0)
                     {
-                        await connection.StopAsync();
+                        throw new Exception("you must specify the process to start");
                     }
+
+                    var envVars = service.EnvVars;
+                    var exeArgs = parseArgs.UnprocessedArgs.AsSpan().Slice(1).ToArray();
+                    var proceStartInfo = new ProcessStartInfo(parseArgs.UnprocessedArgs[0]);
+                    proceStartInfo.WorkingDirectory = parseArgs.WorkingDirectory;
+
+                    foreach (var a in exeArgs)
+                    {
+                        proceStartInfo.ArgumentList.Add(a);
+                    }
+
+                    foreach (var a in envVars)
+                    {
+                        proceStartInfo.Environment[a.Key] = a.Value;
+                    }
+
+                    var process = Process.Start(proceStartInfo);
+                    if (process != null)
+                    {
+                        ChildProcessTracker.AddProcess(process);
+                        process.WaitForExit();
+                        return process.ExitCode;
+                    }
+
+                    return -1;
+                }
+                else
+                {
+                    console.CancelKeyPress += delegate
+                    {
+                        // cancel has been triggered, we can stop waiting
+                        tcs.TrySetResult(null);
+                    };
+
+                    console.WriteLine("\nHit Ctrl+C to stop bridging service into cluster.");
+                    //wait for cancel
+                    await tcs.Task;
                 }
             }
 

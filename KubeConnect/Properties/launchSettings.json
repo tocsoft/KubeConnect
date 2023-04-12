@@ -1,16 +1,20 @@
 {
-  "profiles": {
-    "KubeConnect": {
-      "commandName": "Project",
-      "commandLineArgs": "-x minikube"
-    },
-    "KubeConnect - bridge": {
-      "commandName": "Project",
-      "commandLineArgs": "bridge -service apphost"
-    },
-    "KubeConnect-reduced": {
-      "commandName": "Project",
-      "commandLineArgs": "-x minikube -skip-hosts -http-only "
+    "profiles": {
+        "KubeConnect": {
+            "commandName": "Project",
+            "commandLineArgs": "-x minikube"
+        },
+        "KubeConnect - bridge": {
+            "commandName": "Project",
+            "commandLineArgs": "bridge -service apphost"
+        },
+        "KubeConnect - run": {
+            "commandName": "Project",
+            "commandLineArgs": "bridge -service apphost -env IdentityServer__Certificate__Path=certificates/certificate.pfx -env IdentityServer__Certificate__Password=password  -working-directory \"C:\\Source\\Work\\Hubl.AppHost\\src\\Hubl.AppHost\" -- dotnet run -- --ASPNETCORE_URLS=http://+:5562"
+        },
+        "KubeConnect-reduced": {
+            "commandName": "Project",
+            "commandLineArgs": "-x minikube -skip-hosts -http-only "
+        }
     }
-  }
 }

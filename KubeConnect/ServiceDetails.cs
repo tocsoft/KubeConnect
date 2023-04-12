@@ -83,6 +83,8 @@ namespace KubeConnect
 
         public bool UpdateHostsFile { get; init; }
 
+        public IEnumerable<KeyValuePair<string, string>> EnvVars { get; internal set; }
+
         public static bool operator ==(ServiceDetails? obj1, ServiceDetails? obj2)
         {
             if (ReferenceEquals(obj1, obj2))

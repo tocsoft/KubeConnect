@@ -127,6 +127,7 @@ namespace KubeConnect
             // deal with mapped addresses first
             foreach (var s in serviceList.Items.OrderBy(X => X.Name()))
             {
+
                 var mapping = args.Mappings.FirstOrDefault(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase));
                 var bridge = args.BridgeMappings.Where(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -138,7 +139,10 @@ namespace KubeConnect
                 }
 
                 var address = mapping?.Address ?? NextAddress();
-                services.Add(Create(bridge, address, s));
+                var serice = Create(bridge, address, s);
+                services.Add(serice);
+
+                PopulateEnvironmentVariablesForServiceAsync(serice, deploymentsList);
             }
 
             if (this.Services == null || this.Services.Count() != services.Count || this.Services.Intersect(services).Count() != services.Count)
@@ -480,10 +484,14 @@ namespace KubeConnect
             }
         }
 
-        public async Task<IEnumerable<KeyValuePair<string, string>>> GetEnvironmentVariablesForServiceAsync(ServiceDetails service)
+        public void PopulateEnvironmentVariablesForServiceAsync(ServiceDetails service, V1DeploymentList deployments)
         {
-            var results = await kubernetesClient.ListNamespacedDeploymentAsync(service.Namespace);
-            var deployment = results.Items.Single(x => x.MatchTemplate(service));
+            var deployment = deployments?.Items.FirstOrDefault(x => x.MatchTemplate(service));
+            if (deployment == null)
+            {
+                service.EnvVars = Enumerable.Empty<KeyValuePair<string, string>>();
+                return;
+            }
 
             // TODO handle EnvFrom
             // TODO inject 'standard' kubernetes env vars for service discovery etc
@@ -508,7 +516,7 @@ namespace KubeConnect
                 }
             }
 
-            return fromCluster;
+            service.EnvVars = fromCluster;
         }
     }
 }

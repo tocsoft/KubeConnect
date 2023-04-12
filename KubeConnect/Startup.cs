@@ -4,18 +4,10 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Yarp.ReverseProxy.Configuration;
-using KubeConnect.Hubs;
 
 namespace KubeConnect
 {
@@ -32,7 +24,6 @@ namespace KubeConnect
         {
             services.AddReverseProxy();
             services.AddSingleton<IProxyConfigProvider, IngressProxyConfig>();
-            services.AddSignalR();
         }
 
         public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
@@ -57,8 +48,15 @@ namespace KubeConnect
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapReverseProxy();
-                endpoints.MapHub<BridgeHub>("")
-                    .RequireHost("localhost");
+
+                endpoints.MapGet("/status", () =>
+                {
+                    return new
+                    {
+                        running = true,
+                    };
+                })
+                .RequireHost("localhost");
             });
         }
     }

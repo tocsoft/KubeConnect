@@ -79,7 +79,9 @@ namespace KubeConnect.PortForwarding
                         {
                             Name = service.ServiceName,
                             Namespace = service.Namespace,
+                            RequireSSHServer = true,
                             TargetPort = 2222,
+                            Service = service,
                             Selector = $"{serviceSelector},kubeconnect.bridge/ssh=true" // onlly support finding ssh server for this particular port forward
                         };
 
