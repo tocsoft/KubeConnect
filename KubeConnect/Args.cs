@@ -32,7 +32,8 @@ namespace KubeConnect
                 "map",
                 "kubeconfig",
                 "env",
-                "working-directory"
+                "working-directory",
+                "insecure-skip-tls-verify"
             };
 
         public Args(string[] args)
@@ -67,6 +68,9 @@ namespace KubeConnect
                         break;
                     case "kubeconfig":
                         KubeconfigFile = argNext;
+                        break;
+                    case "insecure-skip-tls-verify":
+                        KubeSkipSsl = bool.Parse(argNext);
                         break;
                     case "skip-hosts":
                         UpdateHosts = false;
@@ -187,6 +191,7 @@ namespace KubeConnect
         public string? Namespace { get; set; }
         public string? KubeconfigFile { get; private set; }
         public string? Context { get; private set; }
+        public bool? KubeSkipSsl { get; private set; }
         public List<Mapping> Mappings { get; } = new List<Mapping>();
         public string? ConsolePipeName { get; private set; }
         public bool NoLogo { get; private set; }

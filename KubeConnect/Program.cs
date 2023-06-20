@@ -135,7 +135,10 @@ Version {CurrentVersion}
                 }
 
                 var config = KubernetesClientConfigurationHelper.BuildConfig(parseArgs.KubeconfigFile, parseArgs.Context);
-
+                if (parseArgs.KubeSkipSsl.HasValue)
+                {
+                    config.SkipTlsVerify = parseArgs.KubeSkipSsl.Value;
+                }
                 var cts = new CancellationTokenSource();
 
                 IKubernetes client = new Kubernetes(config);
