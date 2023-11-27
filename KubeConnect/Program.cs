@@ -22,7 +22,6 @@ namespace KubeConnect
 {
     class Program
     {
-        public static int MainPort = 10401;
         public static string CurrentVersion
         {
             get
@@ -97,35 +96,12 @@ Version {CurrentVersion}
             const string semaphoreName = $"KubeConnect:FEC9031C-3BFD-4F5D-91D9-AC7B93074499";
             if (parseArgs.Action == Args.KubeConnectMode.Connect)
             {
-                if (!CheckAvailableServerPort(MainPort))
+                if (!CheckAvailableServerPort(parseArgs.MainPort))
                 {
                     console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
                     return -1;
                 }
-
-                //// skip the check if elivated as the host exe has already done
-                //if (!parseArgs.Elevated)
-                //{
-                //    var locker = new ProcessLock(semaphoreName);
-                //    if (!locker.Locked)
-                //    {
-                //        console.WriteErrorLine("There is another instance of KubeConnect running exposing the cluster to your machine. Only once instance in 'connect' mode is allows at once.");
-                //        return -1;
-                //    }
-                //}
             }
-            //else if (parseArgs.Action == Args.KubeConnectMode.Bridge)
-            //{
-            //    // should we not auto elevate and launch connect as required???
-            //    using var locker = new ProcessLock(semaphoreName);
-
-            //    if (locker.Locked)
-            //    {
-            //        console.WriteErrorLine("You must also be running a separate KubeConnect session in 'connect' mode to enable bridging across a service.");
-            //        return -1;
-            //    }
-            //}
-
 
             if (parseArgs.Action == Args.KubeConnectMode.Connect)
             {
@@ -248,7 +224,7 @@ Version {CurrentVersion}
                     // lets call home first to see if the conenct server is running
 
                     var response = await new HttpClient()
-                        .GetAsync($"http://localhost:{MainPort}/status");
+                        .GetAsync($"http://localhost:{parseArgs.MainPort}/status");
 
                     if (!response.IsSuccessStatusCode)
                     {

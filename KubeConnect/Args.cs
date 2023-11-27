@@ -25,6 +25,7 @@ namespace KubeConnect
 
         List<string> optionsWithArguments = new List<string>()
             {
+                "port",
                 "service",
                 "namespace",
                 "elevated-command",
@@ -71,6 +72,9 @@ namespace KubeConnect
                         break;
                     case "insecure-skip-tls-verify":
                         KubeSkipSsl = bool.Parse(argNext);
+                        break;
+                    case "port":
+                        MainPort = int.Parse(argNext);
                         break;
                     case "skip-hosts":
                         UpdateHosts = false;
@@ -186,7 +190,8 @@ namespace KubeConnect
 
             }
         }
-
+        
+        public int MainPort { get; set; } = 10401;
         public bool EnableTraceLogs { get; set; } = false;
         public string? Namespace { get; set; }
         public string? KubeconfigFile { get; private set; }

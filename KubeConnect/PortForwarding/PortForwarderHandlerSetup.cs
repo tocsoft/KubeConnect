@@ -34,7 +34,7 @@ namespace KubeConnect.PortForwarding
         public void Configure(KestrelServerOptions options)
         {
             options.ApplicationServices = serviceProvider;
-            options.Listen(IPAddress.Loopback, Program.MainPort);
+            options.Listen(IPAddress.Loopback, args.MainPort);
 
             if (manager.IngressConfig.Enabled)
             {
