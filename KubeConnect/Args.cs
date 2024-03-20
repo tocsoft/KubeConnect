@@ -39,6 +39,10 @@ namespace KubeConnect
 
         public Args(string[] args)
         {
+            // read env vars for default values
+            this.KubeconfigFile = Environment.GetEnvironmentVariable("KUBECONFIG");
+            this.Context = Environment.GetEnvironmentVariable("KUBECONTEXT");
+
             this.RemainingArgs = Array.Empty<string>();
             Func<string, string, string, bool> processArg = (option, arg, argNext) =>
             {
@@ -190,7 +194,7 @@ namespace KubeConnect
 
             }
         }
-        
+
         public int MainPort { get; set; } = 10401;
         public bool EnableTraceLogs { get; set; } = false;
         public string? Namespace { get; set; }
