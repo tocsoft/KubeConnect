@@ -30,11 +30,6 @@ namespace KubeConnect
         {
             app.UseRouting();
 
-            if (args.UseSsl)
-            {
-                app.UseHttpsRedirection();
-            }
-
             app.UseEndpoints(endpoints =>
             {
                 endpoints.MapReverseProxy();
