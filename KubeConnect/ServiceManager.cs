@@ -154,6 +154,8 @@ namespace KubeConnect
 
         public ServiceDetails? GetService(string serviceName)
             => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+        public ServiceDetails GetRequiredService(string serviceName)
+            => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)) ?? throw new Exception($"Failed to find service details named {serviceName}");
 
         private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails service)
         {
@@ -205,7 +207,7 @@ namespace KubeConnect
             }
         }
 
-        Task logWriter;
+        Task? logWriter;
         private void EnsureLogWriterRunning()
         {
             if (!BridgedServices.Any())
@@ -213,7 +215,7 @@ namespace KubeConnect
                 return;
             }
 
-            if (logWriter == null)
+            if (logWriter is null)
             {
                 logWriter = Task.Run(async () =>
                 {

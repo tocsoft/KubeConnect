@@ -149,8 +149,13 @@ namespace KubeConnect.PortForwarding
             return pod;
         }
 
-        private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails service)
+        private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails? service)
         {
+            if (service is null)
+            {
+                return null;
+            }
+
             var results = await kubernetesClient.ListNamespacedDeploymentAsync(service.Namespace);
             foreach (var dep in results.Items)
             {
@@ -169,7 +174,7 @@ namespace KubeConnect.PortForwarding
             var output = connection.Transport.Output;
 
             var binding = connection.Features.Get<PortBinding>();
-            if (binding == null)
+            if (binding is null)
             {
                 throw new InvalidOperationException("PortBinding feature must be defined on the connection");
             }

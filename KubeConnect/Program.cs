@@ -216,7 +216,7 @@ Version {CurrentVersion}
                 // ensure we load up configs form k8s
                 await manager.LoadBindings();
 
-                var service = manager.GetService(serviceName);
+                var service = manager.GetRequiredService(serviceName);
 
                 // fail to connect then stuff not running
                 if (parseArgs.Action == Args.KubeConnectMode.Bridge)
@@ -243,7 +243,7 @@ Version {CurrentVersion}
                     // handle default unmapped ports???
 
                     var cts = new CancellationTokenSource(45000);
-                    SshClient sshClient = null;
+                    SshClient? sshClient = null;
                     while (!cts.IsCancellationRequested)
                     {
                         sshClient = new SshClient(serviceName, 2222, "linuxserver.io", "password");
@@ -297,15 +297,6 @@ Version {CurrentVersion}
                         Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
                         return -1;
                     }
-
-                    //connection.Closed += (e) =>
-                    //{
-                    //    console.WriteLine("KubeConnect session in 'connect' shutdown, stopping bridge.");
-                    //    tcs.TrySetResult(null);
-                    //    return Task.CompletedTask;
-                    //};
-
-                    //await connection.InvokeAsync("StartServiceBridge", serviceName, ports);
                 }
 
                 var runexe = parseArgs.Action == Args.KubeConnectMode.Run || parseArgs.UnprocessedArgs.Length > 0;

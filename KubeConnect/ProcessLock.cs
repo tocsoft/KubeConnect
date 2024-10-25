@@ -29,7 +29,7 @@ namespace KubeConnect
                 }
                 return null;
             }
-            catch(Exception ex)
+            catch
             {
                 return null;
             }

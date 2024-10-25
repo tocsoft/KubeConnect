@@ -26,9 +26,14 @@ namespace KubeConnect
             services.AddSingleton<IProxyConfigProvider, IngressProxyConfig>();
         }
 
-        public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+        public void Configure(IApplicationBuilder app, IWebHostEnvironment env, Args args)
         {
             app.UseRouting();
+
+            if (args.UseSsl)
+            {
+                app.UseHttpsRedirection();
+            }
 
             app.UseEndpoints(endpoints =>
             {

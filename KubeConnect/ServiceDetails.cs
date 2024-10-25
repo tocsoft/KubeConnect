@@ -19,7 +19,7 @@ namespace KubeConnect
 
         public IReadOnlyList<(int remotePort, int localPort)> BridgedPorts { get; init; } = Array.Empty<(int, int)>();
 
-        public IClientProxy Client { get; internal set; }
+        public required IClientProxy Client { get; init; }
 
         object locker = new object();
         StringBuilder builder = new StringBuilder();
@@ -83,7 +83,7 @@ namespace KubeConnect
 
         public bool UpdateHostsFile { get; init; }
 
-        public IEnumerable<KeyValuePair<string, string>> EnvVars { get; internal set; }
+        public IEnumerable<KeyValuePair<string, string>> EnvVars { get; set; } = Enumerable.Empty<KeyValuePair<string, string>>();
 
         public static bool operator ==(ServiceDetails? obj1, ServiceDetails? obj2)
         {
