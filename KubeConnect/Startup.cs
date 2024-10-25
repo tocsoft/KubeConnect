@@ -41,13 +41,12 @@ namespace KubeConnect
 
                 endpoints.MapGet("/status", () =>
                 {
-                    return new
-                    {
-                        running = true,
-                    };
+                    return new StatusResult(true);
                 })
                 .RequireHost("localhost");
             });
         }
     }
+
+    public record StatusResult(bool running);
 }
