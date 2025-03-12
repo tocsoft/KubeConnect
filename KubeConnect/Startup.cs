@@ -1,12 +1,8 @@
-﻿using k8s.KubeConfigModels;
-using KubeConnect.Ingress;
+﻿using KubeConnect.Ingress;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using System.Threading.Tasks;
 using Yarp.ReverseProxy.Configuration;
 
 namespace KubeConnect

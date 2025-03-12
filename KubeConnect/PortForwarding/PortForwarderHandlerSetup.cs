@@ -33,6 +33,7 @@ namespace KubeConnect.PortForwarding
 
         public void Configure(KestrelServerOptions options)
         {
+            options.Limits.MaxRequestBodySize = long.MaxValue;
             options.ApplicationServices = serviceProvider;
             options.Listen(IPAddress.Loopback, args.MainPort);
 
