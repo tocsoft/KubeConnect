@@ -27,17 +27,15 @@ jobs:
         shell: pwsh
         run: ./build.ps1
 
-      - name: Publish to nuget
-        if: ${{ github.event_name == 'release' }}
-        shell: pwsh
-        run: |
-          $pck = "$(Get-ChildItem .\publish\packages\*.nupkg | foreach {$_.FullName } | select -First 1)"
-          Write-Host "publishing $pck"
-          dotnet nuget push "$pck" --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"
-
       - name: Upload Build Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dotnet-tool-pacakge
           path: publish/packages/*.nupkg
           retention-days: 1
+
+      - name: Publish to nuget
+        if: ${{ github.event_name == 'release' }}
+        shell: pwsh
+        run: |
+          dotnet nuget push 'publish/packages/*.nupkg' --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"  --skip-duplicate
