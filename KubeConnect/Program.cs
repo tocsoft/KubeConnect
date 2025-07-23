@@ -17,6 +17,7 @@ using System.Threading.Tasks;
 using Renci.SshNet;
 using k8s.Util.Common;
 using System.Net.Http;
+using System.Net.Sockets;
 
 namespace KubeConnect
 {
@@ -239,7 +240,6 @@ Version {CurrentVersion}
                     var bridgePorts = ports.Select(x => (
                         RemotePort: x.RemotePort == -1 ? defaultPort.listenPort : x.RemotePort,
                         LocalPort: x.LocalPort == -1 ? defaultPort.destinationPort : x.LocalPort)).ToList();
-
                     // handle default unmapped ports???
 
                     var cts = new CancellationTokenSource(45000);

@@ -75,7 +75,16 @@ namespace KubeConnect.PortForwarding
             }
             var pods = (await kubernetesClient.ListNamespacedPodAsync(binding.Namespace, labelSelector: binding.Selector)).Items;
 
-            if (pods.Count == 1)
+            if (pods.Count > 1)
+            {
+                foreach (var p in pods.Skip(1))
+                {
+                    await kubernetesClient.DeleteNamespacedPodAsync(p.Name(), p.Namespace());
+                }
+
+                return pods.First();
+            }
+            else if (pods.Count == 1)
             {
                 return pods.Single();
             }
