@@ -164,7 +164,7 @@ public class KubeConnectBridgeSession : IAsyncDisposable
                         sshClient = new SshClient(Target.ServiceName, 2222, "linuxserver.io", "password");
                         try
                         {
-                            sshClient.ConnectionInfo.Timeout = TimeSpan.FromSeconds(2);
+                            sshClient.ConnectionInfo.Timeout = TimeSpan.FromSeconds(5);
                             sshClient.Connect();
 
                             // we go find the upstream k8s 

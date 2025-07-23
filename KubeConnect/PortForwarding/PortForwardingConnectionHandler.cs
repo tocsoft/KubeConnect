@@ -196,7 +196,7 @@ namespace KubeConnect.PortForwarding
             connection.ConnectionClosed.Register(async () =>
             {
                 binding.Release();
-                await Task.Delay(5000);
+                await Task.Delay(15000);
                 if (binding.RequireSSHServer && !binding.HasRef)
                 {
                     logger.LogInformation("No more connections to bridging components in cluster for {serviceName}, re-enabling deployed services", binding.Name);
