@@ -38,4 +38,7 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         shell: pwsh
         run: |
-          dotnet nuget push 'publish/packages/*.nupkg' --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"  --skip-duplicate
+          $files = Get-ChildItem ./publish/packages/ -name '*.nupkg'
+          foreach ($file in $files){
+            dotnet nuget push --package "./publish/packages/$file" --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"  --skip-duplicate
+          }
