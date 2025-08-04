@@ -18,6 +18,7 @@ using Renci.SshNet;
 using k8s.Util.Common;
 using System.Net.Http;
 using System.Net.Sockets;
+using KubeConnect.Common;
 
 namespace KubeConnect
 {
@@ -126,6 +127,7 @@ Version {CurrentVersion}
                 var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
                 // ensure we load up configs form k8s
                 await manager.LoadBindings();
+
                 var builder = CreateHostBuilder(manager, console, client, parseArgs);
 
                 var serverHost = builder.Build();
@@ -208,91 +210,40 @@ Version {CurrentVersion}
                 var serviceName = parseArgs.BridgeMappings[0].ServiceName;
                 var tcs = new TaskCompletionSource<object?>();
 
-                IKubernetes client = new Kubernetes(config);
-                parseArgs.Namespace ??= config.Namespace ?? "default";
-
-                var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
-
-                var manager = new ServiceManager(client, currentNamespace, console, parseArgs);
-                // ensure we load up configs form k8s
-                await manager.LoadBindings();
-
-                var service = manager.GetRequiredService(serviceName);
+                var conClient = new HttpClient().AsKubeConnectClient(parseArgs.MainPort);
+                var status = await conClient.GetStatus();
+                if (status is null)
+                {
+                    Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
+                    return -1;
+                }
+                var svc = status.Services.FirstOrDefault(x => x.ServiceName.Equals(serviceName));
+                if (svc is null)
+                {
+                    Console.Error.WriteLine($"Service '{serviceName}' not found");
+                    return -1;
+                }
 
                 // fail to connect then stuff not running
                 if (parseArgs.Action == Args.KubeConnectMode.Bridge)
                 {
-                    // lets call home first to see if the conenct server is running
-
-                    var response = await new HttpClient()
-                        .GetAsync($"http://localhost:{parseArgs.MainPort}/status");
-
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
-                        return -1;
-                    }
-
                     var ports = parseArgs.BridgeMappings
                     .Where(x => x.ServiceName == serviceName);
 
-                    var defaultPort = service.TcpPorts.FirstOrDefault();
+                    var defaultPort = svc.Urls.Select(x => new Uri(x).Port).FirstOrDefault();
                     var bridgePorts = ports.Select(x => (
-                        RemotePort: x.RemotePort == -1 ? defaultPort.listenPort : x.RemotePort,
-                        LocalPort: x.LocalPort == -1 ? defaultPort.destinationPort : x.LocalPort)).ToList();
-                    // handle default unmapped ports???
+                        RemotePort: x.RemotePort == -1 ? defaultPort : x.RemotePort,
+                        LocalPort: x.LocalPort == -1 ? defaultPort : x.LocalPort)).ToList();
 
-                    var cts = new CancellationTokenSource(45000);
-                    SshClient? sshClient = null;
-                    while (!cts.IsCancellationRequested)
-                    {
-                        sshClient = new SshClient(serviceName, 2222, "linuxserver.io", "password");
-                        try
-                        {
-                            sshClient.ConnectionInfo.Timeout = TimeSpan.FromSeconds(4);
-                            sshClient.Connect();
 
-                            foreach (var mappings in bridgePorts)
-                            {
-                                var port = new ForwardedPortRemote(IPAddress.Any, (uint)mappings.RemotePort, IPAddress.Loopback, (uint)mappings.LocalPort);
-                                sshClient.AddForwardedPort(port);
-                                port.RequestReceived += (object? sender, Renci.SshNet.Common.PortForwardEventArgs e) =>
-                                {
-                                    try
-                                    {
-                                        console.WriteLine($"Traffic redirected from {service.ServiceName}:{mappings.RemotePort} to localhost:{mappings.LocalPort}");
-                                    }
-                                    catch
-                                    {
+                    parseArgs.EnableTraceLogs = true;
+                    var logger = new IConsoleLogProvider(console, parseArgs).CreateLogger($"SshBridge.{serviceName}");
+                    var sshClient = new KubeConnectSSHClient(conClient, serviceName, bridgePorts.Single().LocalPort, [bridgePorts.Single().RemotePort], logger, Process.GetCurrentProcess().Id);
 
-                                    }
-                                };
-                                port.Start();
-                            }
+                    var timeout = new CancellationTokenSource(45000);
+                    var started = await sshClient.Start(timeout.Token);
 
-                            // if they all started report it to the console
-                            // maybe should be handled in program??
-                            foreach (var mappings in bridgePorts)
-                            {
-                                console.WriteLine($"Redirecting traffic from {service.ServiceName}:{mappings.RemotePort} to localhost:{mappings.LocalPort}");
-                            }
-                            break;
-                        }
-                        catch when (!cts.IsCancellationRequested)
-                        {
-                            client?.Dispose();
-                        }
-                    }
-
-                    if (sshClient != null)
-                    {
-                        sshClient.ErrorOccurred += (s, e) =>
-                        {
-                            tcs.TrySetResult(null);
-                            Console.Error.WriteLine("Bridge connection error, shutting down");
-                        };
-                    }
-                    else
+                    if (!started)
                     {
                         Console.Error.WriteLine("Failed to connect bridge, ensure kubeconnect is running in 'connect' mode");
                         return -1;
@@ -308,7 +259,7 @@ Version {CurrentVersion}
                         throw new Exception("you must specify the process to start");
                     }
 
-                    var envVars = service.EnvVars;
+                    var envVars = svc.EnvironmentVariables;
                     var exeArgs = parseArgs.UnprocessedArgs.AsSpan().Slice(1).ToArray();
                     var proceStartInfo = new ProcessStartInfo(parseArgs.UnprocessedArgs[0]);
                     proceStartInfo.WorkingDirectory = parseArgs.WorkingDirectory;

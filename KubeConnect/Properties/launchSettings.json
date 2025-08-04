@@ -1,8 +1,7 @@
 {
   "profiles": {
     "KubeConnect": {
-      "commandName": "Project",
-      "commandLineArgs": "--insecure-skip-tls-verify=true --namespace=localdev"
+      "commandName": "Project"
     },
     "KubeConnect - bridge": {
       "commandName": "Project",

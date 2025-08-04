@@ -10,9 +10,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
-using System.Net.Sockets;
-using System.Runtime.InteropServices;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -46,9 +43,11 @@ namespace KubeConnect
         public async Task LoadBindings()
         {
             var deploymentsList = await kubernetesClient.ListNamespacedDeploymentAsync(@namespace);
-            var serviceList = await kubernetesClient.ListNamespacedServiceAsync(@namespace);
+            var serviceList1 = await kubernetesClient.ListNamespacedServiceAsync(@namespace);
+            var serviceListFiltered = serviceList1.Items.Where(x => x.GetLabel("provider") != "kubernetes"); // hide systemish services
+            // var named = serviceListFiltered.Select(x => (x.Name(), x));
             // assign IP Addresses
-            List<IPAddress> usedAddresses = new List<IPAddress>(serviceList.Items.Count + 2);
+            List<IPAddress> usedAddresses = new List<IPAddress>(serviceListFiltered.Count() + 2);
             //remaining
             IPAddress NextAddress()
             {
@@ -125,9 +124,8 @@ namespace KubeConnect
 
             var services = new List<ServiceDetails>();
             // deal with mapped addresses first
-            foreach (var s in serviceList.Items.OrderBy(X => X.Name()))
+            foreach (var s in serviceListFiltered.OrderBy(X => X.Name()))
             {
-
                 var mapping = args.Mappings.FirstOrDefault(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase));
                 var bridge = args.BridgeMappings.Where(x => x.ServiceName.Equals(s.Name(), StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -152,8 +150,42 @@ namespace KubeConnect
             }
         }
 
+        private async Task<V1Pod?> TargetPod(ServiceDetails service, CancellationToken cancellationToken)
+        {
+            var pods = await kubernetesClient.ListNamespacedPodAsync(service.Namespace, labelSelector: service.StringSelector);
+            var pod = pods.Items.Where(x => x.Status.Phase == "Running").FirstOrDefault();
+            pod ??= pods.Items.FirstOrDefault();
+            return pod;
+        }
+
+        public async Task<string> GetServiceStatus(ServiceDetails service)
+        {
+            // get pod
+            var pod = await TargetPod(service, CancellationToken.None);
+            return pod?.Status?.Phase ?? "Missing";
+        }
+
+
+        internal async Task<Stream?> GetServiceLogStream(ServiceDetails service)
+        {
+            var pod = await TargetPod(service, CancellationToken.None);
+            if (pod.GetLabel("kubeconnect.bridge/ssh") == "true")
+            {
+                // not for the ssh pod!
+                return null;
+            }
+
+            if (pod != null)
+            {
+                return await kubernetesClient.ReadNamespacedPodLogAsync(pod.Name(), pod.Namespace(), follow: true);
+            }
+
+            return null;
+        }
+
         public ServiceDetails? GetService(string serviceName)
             => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase));
+
         public ServiceDetails GetRequiredService(string serviceName)
             => this.Services.SingleOrDefault(x => x.ServiceName.Equals(serviceName, StringComparison.OrdinalIgnoreCase)) ?? throw new Exception($"Failed to find service details named {serviceName}");
 
@@ -170,18 +202,19 @@ namespace KubeConnect
 
             return null;
         }
-        private async Task<V1Pod?> FindInterceptionPod(ServiceDetails service)
+        private async Task<IEnumerable<V1Pod>> FindInterceptionPods(ServiceDetails service)
         {
+            List<V1Pod> pods = new();
             var runningPods = (await kubernetesClient.ListNamespacedPodAsync(service.Namespace, labelSelector: "kubeconnect.bridge/ssh=true")).Items;
             foreach (var dep in runningPods)
             {
                 if (dep.Match(service))
                 {
-                    return dep;
+                    pods.Add(dep);
                 }
             }
 
-            return null;
+            return pods;
         }
 
         private async Task DisableDeployment(V1Deployment deployment)
@@ -255,11 +288,11 @@ namespace KubeConnect
                 bridgeDetails.Log(msg);
             };
 
-            var pod = await FindInterceptionPod(service);
+            var pods = await FindInterceptionPods(service);
             // clean up any old pods incase we have changes settigns
-            if (pod != null)
+            foreach (var p in pods)
             {
-                await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+                await kubernetesClient.DeleteNamespacedPodAsync(p.Name(), p.Namespace());
             }
 
             var ports = bridgeDetails.BridgedPorts.Select(X => new V1ContainerPort
@@ -274,7 +307,7 @@ namespace KubeConnect
                 Name = "ssh"
             });
 
-            pod = new V1Pod()
+            var pod = new V1Pod()
             {
                 Metadata = new V1ObjectMeta()
                 {
@@ -461,10 +494,14 @@ namespace KubeConnect
                 console.WriteLine($"Shutting down bridge for {service.ServiceName}");
             }
 
-            var pod = await FindInterceptionPod(service);
-            if (pod != null)
+            var pods = await FindInterceptionPods(service);
+            foreach (var pod in pods)
             {
-                await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+                try
+                {
+                    await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+                }
+                catch { }
             }
 
             var dep = await FindMatchingDeployment(service);
@@ -483,6 +520,19 @@ namespace KubeConnect
             foreach (var s in this.Services)
             {
                 await Release(s);
+            }
+
+            foreach (var ns in this.Services.Select(x => x.Namespace).Distinct())
+            {
+                var runningPods = (await kubernetesClient.ListNamespacedPodAsync(ns, labelSelector: "kubeconnect.bridge/ssh=true")).Items;
+                foreach (var pod in runningPods)
+                {
+                    try
+                    {
+                        await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+                    }
+                    catch { }
+                }
             }
         }
 

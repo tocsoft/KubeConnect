@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -158,6 +159,13 @@ namespace KubeConnect.PortForwarding
             return pod;
         }
 
+        private async Task<(bool running, bool sshPod)> CheckPod(PortBinding binding)
+        {
+            var pods = await kubernetesClient.ListNamespacedPodAsync(binding.Namespace, labelSelector: binding.Selector);
+            var pod = pods.Items.Where(x => x.Status.Phase == "Running").FirstOrDefault();
+            return (pod?.Status?.Phase == "Running", pod?.GetAnnotation("kubeconnect.bridge/ssh") == "true");
+        }
+
         private async Task<V1Deployment?> FindMatchingDeployment(ServiceDetails? service)
         {
             if (service is null)
@@ -199,16 +207,19 @@ namespace KubeConnect.PortForwarding
                 await Task.Delay(15000);
                 if (binding.RequireSSHServer && !binding.HasRef)
                 {
-                    logger.LogInformation("No more connections to bridging components in cluster for {serviceName}, re-enabling deployed services", binding.Name);
-                    try
+                    var (isRunning, isSsh) = await CheckPod(binding);
+                    if (isSsh)
                     {
-                        await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
-                    }
-                    catch
-                    {
+                        logger.LogInformation("No more connections to bridging components in cluster for {serviceName}, re-enabling deployed services", binding.Name);
+                        try
+                        {
+                            await kubernetesClient.DeleteNamespacedPodAsync(pod.Name(), pod.Namespace());
+                        }
+                        catch
+                        {
 
+                        }
                     }
-
                     var dep = await FindMatchingDeployment(binding.Service);
                     if (dep != null)
                     {
@@ -240,54 +251,80 @@ namespace KubeConnect.PortForwarding
 
                 var podOutput = PipeReader.Create(stream);
                 var podInput = PipeWriter.Create(stream);
-                var diedToken = new CancellationTokenSource();
-                var con = CancellationTokenSource.CreateLinkedTokenSource(diedToken.Token, connection.ConnectionClosed);
-                async Task PushToPod()
+
+                var con = connection.ConnectionClosed;
+
+                async ValueTask<bool> HandleOutToClient()
                 {
-                    try
-                    {
-                        while (!con.IsCancellationRequested)
-                        {
-                            var result = await input.ReadAsync(con.Token);
+                    var result = await podOutput.ReadAsync(con);
 
-                            foreach (var buffer in result.Buffer)
-                            {
-                                stream.Write(buffer.Span);
-                            }
-                            input.AdvanceTo(result.Buffer.End);
-
-                            if (result.IsCompleted) { break; }
-                        }
-                    }
-                    catch
+                    foreach (var buffer in result.Buffer)
                     {
-                        diedToken.Cancel();
+                        await output.WriteAsync(buffer, con);
                     }
-                }
-                async Task PushToClient()
-                {
-                    try
-                    {
-                        while (!con.IsCancellationRequested)
-                        {
-                            var result = await podOutput.ReadAsync(con.Token);
+                    podOutput.AdvanceTo(result.Buffer.End);
 
-                            foreach (var buffer in result.Buffer)
-                            {
-                                await output.WriteAsync(buffer, con.Token);
-                            }
-                            podOutput.AdvanceTo(result.Buffer.End);
-
-                            if (result.IsCompleted) { break; }
-                        }
-                    }
-                    catch
+                    if (result.IsCompleted)
                     {
-                        diedToken.Cancel();
+                        return true;
                     }
+
+                    return false;
                 }
 
-                await Task.WhenAll(PushToPod(), PushToClient());
+                async ValueTask<bool> HandleOutToPod()
+                {
+                    var result = await input.ReadAsync(con);
+
+                    foreach (var buffer in result.Buffer)
+                    {
+                        stream.Write(buffer.Span);
+                    }
+                    input.AdvanceTo(result.Buffer.End);
+
+                    if (result.IsCompleted)
+                    {
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                try
+                {
+                    var toClient = HandleOutToClient();
+                    var toPod = HandleOutToPod();
+
+                    while (!con.IsCancellationRequested)
+                    {
+                        if (toClient.IsCompleted)
+                        {
+                            if (await toClient)
+                            {
+                                // connection closed/completed!
+                                return;
+                            }
+                            toClient = HandleOutToClient();
+                            continue;
+                        }
+
+                        if (toPod.IsCompleted)
+                        {
+                            if (await toPod)
+                            {
+                                // connection closed/completed!
+                                return;
+                            }
+                            toPod = HandleOutToPod();
+                            continue;
+                        }
+
+                        await Task.WhenAny(toClient.AsTask(), toPod.AsTask());
+                    }
+                }
+                catch
+                {
+                }
             }
             catch (OperationCanceledException)
             {

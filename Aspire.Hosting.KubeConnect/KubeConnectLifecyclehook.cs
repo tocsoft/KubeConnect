@@ -1,5 +1,6 @@
 ﻿using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Lifecycle;
+using Renci.SshNet;
 
 namespace Aspire.Hosting.KubeConnect;
 
@@ -16,7 +17,7 @@ internal class KubeConnectLifecyclehook(
         {
             return Task.CompletedTask;
         }
-        return manager.InitKubeConnect(appModel, cancellationToken); ;
+        return manager.InitKubeConnect(cancellationToken); ;
     }
 
     public async Task AfterEndpointsAllocatedAsync(DistributedApplicationModel appModel, CancellationToken cancellationToken = default)
@@ -35,7 +36,14 @@ internal class KubeConnectLifecyclehook(
             {
                 var logger = resourceLoggerService.GetLogger(r);
 
-                var session = new KubeConnectBridgeSessionSet(appModel, logger, r, targets)
+                await resourceNotificationService.PublishUpdateAsync(r, s =>
+                {
+                    return s with
+                    {
+                        Urls = [],
+                    };
+                });
+                var session = new KubeConnectBridgeSessionSet(manager, r, targets)
                 {
                     OnStatusUpdate = (session) =>
                     {
@@ -47,10 +55,11 @@ internal class KubeConnectLifecyclehook(
                             {
                                 State = session.Status switch
                                 {
+                                    "Finished" => ResourceCommandState.Enabled,
                                     "Stopped" => ResourceCommandState.Enabled,
                                     "Starting" => ResourceCommandState.Disabled,
                                     _ => ResourceCommandState.Hidden,
-                                } 
+                                }
                             };
                             var stopCommandUpdated = stopCommand with
                             {
@@ -71,7 +80,15 @@ internal class KubeConnectLifecyclehook(
                 };
 
                 r.Annotations.Add(session);
-                if (targets.Any(x => x.AutoStart))
+
+                var autoStart = targets.Any(x => x.AutoStart);
+
+                if (r.TryGetLastAnnotation<ExplicitStartupAnnotation>(out _))
+                {
+                    autoStart = false;
+                }
+
+                if (autoStart)
                 {
                     await session.Start();
                 }

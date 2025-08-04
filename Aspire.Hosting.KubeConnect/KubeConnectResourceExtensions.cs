@@ -49,6 +49,7 @@ public static class KubeConnectResourceExtensions
                 return ctx.ResourceSnapshot.Commands.FirstOrDefault(x => x.Name == $"start-kubeconnect-bridge-{builder.Resource.Name}")?.State ?? ResourceCommandState.Enabled;
             },
             IconName = "PlugConnected",
+            IconVariant = IconVariant.Regular,
         });
 
         builder.WithCommand($"stop-kubeconnect-bridge-{builder.Resource.Name}", "Stop KubeConnect bridge", async (context) =>
@@ -70,6 +71,7 @@ public static class KubeConnectResourceExtensions
                 return ctx.ResourceSnapshot.Commands.FirstOrDefault(x => x.Name == $"stop-kubeconnect-bridge-{builder.Resource.Name}")?.State ?? ResourceCommandState.Hidden;
             },
             IconName = "PlugDisconnected",
+            IconVariant = IconVariant.Filled,
         });
 
         return builder;
