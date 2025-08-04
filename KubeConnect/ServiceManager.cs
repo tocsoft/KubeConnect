@@ -17,12 +17,12 @@ namespace KubeConnect
 {
     public class ServiceManager
     {
-        private readonly IKubernetes kubernetesClient;
+        private readonly Kubernetes kubernetesClient;
         private readonly string @namespace;
         private readonly IConsole console;
         private readonly Args args;
 
-        public ServiceManager(IKubernetes kubernetesClient, string @namespace, IConsole console, Args args)
+        public ServiceManager(Kubernetes kubernetesClient, string @namespace, IConsole console, Args args)
         {
             this.kubernetesClient = kubernetesClient;
             this.@namespace = @namespace;

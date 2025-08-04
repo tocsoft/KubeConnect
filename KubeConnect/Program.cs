@@ -14,10 +14,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
-using Renci.SshNet;
-using k8s.Util.Common;
 using System.Net.Http;
-using System.Net.Sockets;
 using KubeConnect.Common;
 
 namespace KubeConnect
@@ -119,7 +116,7 @@ Version {CurrentVersion}
                 }
                 var cts = new CancellationTokenSource();
 
-                IKubernetes client = new Kubernetes(config);
+                Kubernetes client = new Kubernetes(config);
                 parseArgs.Namespace ??= config.Namespace ?? "default";
 
                 var currentNamespace = parseArgs.Namespace ?? config.Namespace ?? "default";
@@ -351,7 +348,7 @@ Version {CurrentVersion}
             }
         }
 
-        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, IKubernetes kubernetes, Args args)
+        private static IHostBuilder CreateHostBuilder(ServiceManager manager, IConsole console, Kubernetes kubernetes, Args args)
             => Host.CreateDefaultBuilder(Array.Empty<string>())
                 .ConfigureLogging((s, o) =>
                 {

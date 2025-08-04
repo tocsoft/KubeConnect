@@ -17,10 +17,10 @@ namespace KubeConnect.PortForwarding
     // This is the connection handler the framework uses to handle new incoming connections
     public class PortForwardingConnectionHandler : ConnectionHandler
     {
-        private readonly IKubernetes kubernetesClient;
+        private readonly Kubernetes kubernetesClient;
         private readonly ILogger logger;
 
-        public PortForwardingConnectionHandler(IKubernetes kubernetesClient, ILogger<PortForwardingConnectionHandler> logger)
+        public PortForwardingConnectionHandler(Kubernetes kubernetesClient, ILogger<PortForwardingConnectionHandler> logger)
         {
             this.kubernetesClient = kubernetesClient;
             this.logger = logger;

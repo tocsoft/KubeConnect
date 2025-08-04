@@ -1,19 +1,7 @@
 ﻿using Aspire.Hosting.ApplicationModel;
-using Aspire.Hosting.Lifecycle;
-using Humanizer.Localisation;
-using k8s;
-using k8s.Models;
 using KubeConnect.Common;
-using Microsoft.AspNetCore.Razor.Runtime.TagHelpers;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Renci.SshNet;
-using Renci.SshNet.Common;
 using System.Collections.Concurrent;
-using System.Net;
-using System.Net.Http;
-using System.Net.Http.Json;
 
 namespace Aspire.Hosting.KubeConnect;
 
@@ -21,12 +9,11 @@ internal class KubeConnectManager(
     DistributedApplicationModel appModel,
     ResourceNotificationService resourceNotificationService,
     ResourceLoggerService resourceLoggerService,
-    HttpClient httpClient) : IAsyncDisposable
+    KubeConnectClient connectClient) : IAsyncDisposable
 {
     private KubeConnectResource _resource = null!;
     private DisposableHandle _monitor = null!;
     private ConcurrentDictionary<KubeConnectServiceResource, DisposableHandle> _logMonitors = new();
-    private KubeConnectClient connectClient = null!;
 
     private async Task BindLogs(KubeConnectServiceResource bound, ServiceDetailResult serviceDetail, CancellationToken cancellationToken)
     {
@@ -190,7 +177,6 @@ internal class KubeConnectManager(
         }
 
         _resource = res;
-        connectClient = httpClient.AsKubeConnectClient(res.MainPort);
 
         await resourceNotificationService.PublishUpdateAsync(_resource, s => s with
         {

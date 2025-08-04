@@ -1,6 +1,5 @@
 ﻿using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Lifecycle;
-using Renci.SshNet;
 
 namespace Aspire.Hosting.KubeConnect;
 

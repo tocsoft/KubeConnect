@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <Sdk Name="Aspire.AppHost.Sdk" Version="9.3.1" />
 
@@ -8,11 +8,21 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <UserSecretsId>10eab6f2-7655-448d-9e17-08391a4e3035</UserSecretsId>
+    <Company>Tocsoft</Company>
+    <Authors>Tocsoft</Authors>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>kubeconnect-ui</ToolCommandName>
+    <PackageOutputPath>./nupkg</PackageOutputPath>
+    <PackageId>Tocsoft.KubeConnectUI.Tool</PackageId>
+    <IsPackable>true</IsPackable>
+    <LangVersion>latest</LangVersion>
+    <RollForward>LatestMajor</RollForward>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Aspire.Hosting.KubeConnect\Aspire.Hosting.KubeConnect.csproj" IsAspireProjectResource="false" />
-    <PackageReference Include="Aspire.Hosting.AppHost" Version="9.3.1" />
+    <PackageReference Include="Aspire.Hosting.AppHost" Version="9.4.0" />
   </ItemGroup>
 
 </Project>
