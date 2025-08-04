@@ -21,6 +21,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Samples", "Samples", "{02EA
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubeconnectLogStreamViewer", "KubeconnectLogStreamViewer\KubeconnectLogStreamViewer.csproj", "{817BF11F-0314-4F7D-9F35-5D6608132386}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KubeConnectUI", "KubeConnectUI\KubeConnectUI.csproj", "{65464948-927C-4D79-B868-08EA78F71A38}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -47,6 +49,10 @@ Global
 		{817BF11F-0314-4F7D-9F35-5D6608132386}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{817BF11F-0314-4F7D-9F35-5D6608132386}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{817BF11F-0314-4F7D-9F35-5D6608132386}.Release|Any CPU.Build.0 = Release|Any CPU
+		{65464948-927C-4D79-B868-08EA78F71A38}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{65464948-927C-4D79-B868-08EA78F71A38}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{65464948-927C-4D79-B868-08EA78F71A38}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{65464948-927C-4D79-B868-08EA78F71A38}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
