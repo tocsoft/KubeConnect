@@ -97,6 +97,17 @@ internal class KubeConnectManager(
                         Urls = [],
                     });
                 }
+                List<UrlSnapshot> urls = new List<UrlSnapshot>();
+                if (bound.TryGetAnnotationsOfType<ResourceUrlAnnotation>(out var urlList))
+                {
+                    urls.AddRange(urlList.Select(x => new UrlSnapshot(x.DisplayText, x.Url, x.DisplayLocation == UrlDisplayLocation.DetailsOnly)
+                    {
+                        DisplayProperties = new()
+                        {
+                            DisplayName = x.DisplayText ?? x.Url,
+                        }
+                    }));
+                }
 
                 var portList = svc.Urls.Select(x => new Uri(x).Port).ToList();
                 if (!bound.TryGetLastAnnotation<KubeConnectServicePortsAnnotation>(out var portsAnn))
@@ -111,10 +122,12 @@ internal class KubeConnectManager(
                     bound.Annotations.Add(portsAnn);
                 }
 
+                urls.AddRange(svc.Urls.Select(x => new UrlSnapshot(null, x, true)));
+
                 await resourceNotificationService.PublishUpdateAsync(bound, s => s with
                 {
                     State = svc.Status,
-                    Urls = [.. svc.Urls.Select(x => new UrlSnapshot(null, x, false))]
+                    Urls = [.. urls]
                 });
 
                 if (showServices || !bound.TryGetAnnotationsOfType<DynamicServiceAnnotation>(out _))
