@@ -93,6 +93,12 @@ public static class KubeConnectResourceExtensions
     public static IResourceBuilder<KubeConnectResource> WithShowDiscoveredServices(this IResourceBuilder<KubeConnectResource> builder, bool showServices = true)
         => builder.WithAnnotation(new KubeConnectResourceShowServicesAnnotation(showServices), ResourceAnnotationMutationBehavior.Replace);
 
+    public static IResourceBuilder<KubeConnectServiceResource> WithServiceLogs(this IResourceBuilder<KubeConnectServiceResource> builder)
+        => builder.WithAnnotation(new KubeConnectResourceShowLogsAnnotation(), ResourceAnnotationMutationBehavior.Replace);
+
+    public static IResourceBuilder<KubeConnectResource> WithServiceLogs(this IResourceBuilder<KubeConnectResource> builder)
+        => builder.WithAnnotation(new KubeConnectResourceShowLogsAnnotation(), ResourceAnnotationMutationBehavior.Replace);
+
     public static IResourceBuilder<KubeConnectResource> AddKubeConnect(this IDistributedApplicationBuilder builder, string name)
     {
         var kube = builder.Resources.OfType<KubeConnectResource>().SingleOrDefault();
@@ -157,5 +163,9 @@ public static class KubeConnectResourceExtensions
     }
 }
 internal record KubeConnectResourceShowServicesAnnotation(bool ShowServices) : IResourceAnnotation
+{
+}
+
+public record KubeConnectResourceShowLogsAnnotation() : IResourceAnnotation
 {
 }

@@ -17,16 +17,18 @@ internal class KubeConnectManager(
 
     private async Task BindLogs(KubeConnectServiceResource bound, ServiceDetailResult serviceDetail, CancellationToken cancellationToken)
     {
+        var showLogs = bound.HasAnnotationOfType<KubeConnectResourceShowLogsAnnotation>() || _resource.HasAnnotationOfType<KubeConnectResourceShowLogsAnnotation>();
+
         if (_logMonitors.TryGetValue(bound, out var handle))
         {
-            if (KnownResourceStates.TerminalStates.Contains(serviceDetail.Status) || serviceDetail.Status == "Bridged")
+            if (!showLogs || KnownResourceStates.TerminalStates.Contains(serviceDetail.Status) || serviceDetail.Status == "Bridged")
             {
                 await handle.DisposeAsync();
             }
             return;
         }
 
-        if (KnownResourceStates.TerminalStates.Contains(serviceDetail.Status) || serviceDetail.Status == "Bridged")
+        if (!showLogs || KnownResourceStates.TerminalStates.Contains(serviceDetail.Status) || serviceDetail.Status == "Bridged")
         {
             return; // we don't need to monitor logs for terminal states
         }

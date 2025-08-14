@@ -3,12 +3,12 @@ using k8s.Models;
 using Microsoft.AspNetCore.Connections;
 using Microsoft.Extensions.Logging;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO.Pipelines;
 using System.Linq;
 using System.Net;
-using System.Net.Http;
-using System.Net.Sockets;
+using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -240,91 +240,9 @@ namespace KubeConnect.PortForwarding
             {
                 using var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), binding.Namespace, new int[] { binding.TargetPort }, "v4.channel.k8s.io");
 
-                using var demux = new StreamDemuxer(webSocket, StreamType.PortForward, ownsSocket: true);
+                var proxy = new PortForwardProxy(webSocket, connection.Transport);
 
-                demux.Start();
-                connection.ConnectionClosed.Register(() =>
-                {
-                    demux.Dispose();
-                });
-                using var stream = demux.GetStream((byte?)0, (byte?)0);
-
-                var podOutput = PipeReader.Create(stream);
-                var podInput = PipeWriter.Create(stream);
-
-                var con = connection.ConnectionClosed;
-
-                async ValueTask<bool> HandleOutToClient()
-                {
-                    var result = await podOutput.ReadAsync(con);
-
-                    foreach (var buffer in result.Buffer)
-                    {
-                        await output.WriteAsync(buffer, con);
-                    }
-                    podOutput.AdvanceTo(result.Buffer.End);
-
-                    if (result.IsCompleted)
-                    {
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                async ValueTask<bool> HandleOutToPod()
-                {
-                    var result = await input.ReadAsync(con);
-
-                    foreach (var buffer in result.Buffer)
-                    {
-                        stream.Write(buffer.Span);
-                    }
-                    input.AdvanceTo(result.Buffer.End);
-
-                    if (result.IsCompleted)
-                    {
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                try
-                {
-                    var toClient = HandleOutToClient();
-                    var toPod = HandleOutToPod();
-
-                    while (!con.IsCancellationRequested)
-                    {
-                        if (toClient.IsCompleted)
-                        {
-                            if (await toClient)
-                            {
-                                // connection closed/completed!
-                                return;
-                            }
-                            toClient = HandleOutToClient();
-                            continue;
-                        }
-
-                        if (toPod.IsCompleted)
-                        {
-                            if (await toPod)
-                            {
-                                // connection closed/completed!
-                                return;
-                            }
-                            toPod = HandleOutToPod();
-                            continue;
-                        }
-
-                        await Task.WhenAny(toClient.AsTask(), toPod.AsTask());
-                    }
-                }
-                catch
-                {
-                }
+                await proxy.Forward(connection.ConnectionClosed);
             }
             catch (OperationCanceledException)
             {
@@ -334,7 +252,6 @@ namespace KubeConnect.PortForwarding
             catch (ConnectionResetException)
             {
                 // connection was closed just die silently
-                //throw;
                 connection.Abort();
             }
             finally
@@ -367,4 +284,158 @@ namespace KubeConnect.PortForwarding
 
     }
 
+    internal class PortForwardProxy
+    {
+        private const int MAXFRAMESIZE = 15 * 1024 * 1024; // 15MB
+        private readonly WebSocket webSocket;
+        private readonly IDuplexPipe pipe;
+        private int bytesToSkip = 3;
+
+        public PortForwardProxy(WebSocket webSocket, IDuplexPipe pipe)
+        {
+            this.webSocket = webSocket;
+            this.pipe = pipe;
+        }
+
+        public async Task Forward(CancellationToken cancellationToken)
+        {
+            // everything in the pipe needs reading, and then wrting out to the websocket!
+            var readTask = ReadFromWebsocket(cancellationToken);
+            var writeTask = WriteOutToWebSocket(cancellationToken);
+            Task[] tasks = [
+                readTask.AsTask(),
+                writeTask.AsTask()
+            ];
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                await Task.WhenAny(tasks);
+
+                if (readTask.IsCompleted)
+                {
+                    if (await readTask)
+                    {
+                        return;
+                    }
+
+                    readTask = ReadFromWebsocket(cancellationToken);
+                    tasks[0] = readTask.AsTask();
+                }
+
+                if (writeTask.IsCompleted)
+                {
+                    if (await writeTask)
+                    {
+                        return;
+                    }
+                    writeTask = WriteOutToWebSocket(cancellationToken);
+                    tasks[1] = writeTask.AsTask();
+                }
+            }
+
+
+        }
+        async ValueTask<bool> ReadFromWebsocket(CancellationToken cancellationToken)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(1024 * 1024);
+            var segment = buffer.AsMemory();
+            try
+            {
+                while (!cancellationToken.IsCancellationRequested && webSocket.CloseStatus == null)
+                {
+                    // We always get data in this format:
+                    // [stream index] (1 for stdout, 2 for stderr)
+                    // [payload]
+                    var result = await webSocket.ReceiveAsync(segment, cancellationToken).ConfigureAwait(false);
+
+                    // Ignore empty messages
+                    if (result.Count < 2)
+                    {
+                        continue;
+                    }
+                    if (result.Count == 3)
+                    {
+                        bytesToSkip = 1;
+                        continue;
+                    }
+
+                    // When used in port-forwarding, the first 2 bytes from the web socket is port bytes, skip.
+                    // https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/server/portforward/websocket.go
+
+                    // we read/ignore the first 3 bytes, then onbyte(for the streamindex) there after
+                    var remainingBuffer = segment.Slice(bytesToSkip, result.Count - bytesToSkip);
+                    bytesToSkip = 1;
+
+                    await pipe.Output.WriteAsync(remainingBuffer, cancellationToken);
+
+                    while (!result.EndOfMessage)
+                    {
+                        result = await webSocket.ReceiveAsync(segment, cancellationToken).ConfigureAwait(false);
+                        await pipe.Output.WriteAsync(segment.Slice(0, result.Count), cancellationToken);
+                    }
+                    break;
+                }
+            }
+            catch (Exception e)
+            {
+                var t = e;
+                throw;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+
+            return webSocket.CloseStatus != null;
+        }
+
+        async ValueTask<bool> WriteOutToWebSocket(CancellationToken cancellationToken)
+        {
+            var result = await pipe.Input.ReadAsync(cancellationToken);
+
+            foreach (var buffer in result.Buffer)
+            {
+                await WriteAsync(buffer, cancellationToken);
+            }
+            pipe.Input.AdvanceTo(result.Buffer.End);
+
+            if (result.IsCompleted)
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        internal async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            if (buffer.Length == 0)
+            {
+                return;
+            }
+
+            var writeBuffer = ArrayPool<byte>.Shared.Rent(Math.Min(buffer.Length, MAXFRAMESIZE) + 1);
+            var writeBufferSpan = writeBuffer.AsMemory();
+            try
+            {
+                writeBuffer[0] = 0;
+                for (var i = 0; i < buffer.Length; i += MAXFRAMESIZE)
+                {
+                    var slice = buffer.Slice(i, Math.Min(buffer.Length - i, MAXFRAMESIZE));
+                    slice.CopyTo(writeBufferSpan.Slice(1, slice.Length));
+                    var segment = writeBufferSpan.Slice(0, slice.Length + 1);
+                    await webSocket.SendAsync(segment, WebSocketMessageType.Binary, false, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+            }
+            catch (Exception e)
+            {
+                var t = e;
+                throw t;
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(writeBuffer);
+            }
+        }
+    }
 }
