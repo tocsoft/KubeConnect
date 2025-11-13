@@ -354,6 +354,10 @@ Version {CurrentVersion}
                 {
                     o.ClearProviders();
                     o.Services.AddSingleton<ILoggerProvider, IConsoleLogProvider>();
+                    //o.AddFilter(x =>
+                    //{
+                    //    return true;
+                    //});
                 })
                 .ConfigureServices(services =>
                 {

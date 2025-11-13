@@ -187,6 +187,7 @@ namespace KubeConnect.PortForwarding
 
         public override async Task OnConnectedAsync(ConnectionContext connection)
         {
+            logger.LogDebug("[{ConnectionID}] starting connection", connection.ConnectionId);
             var input = connection.Transport.Input;
             var output = connection.Transport.Output;
 
@@ -199,7 +200,9 @@ namespace KubeConnect.PortForwarding
 
             // establish connection to cluster/pod
             // sync data to/from pod
+            logger.LogDebug("[{ConnectionID}] finding pod", connection.ConnectionId);
             var pod = await FindPod(binding);
+            logger.LogDebug("[{ConnectionID}] found pod {PodName}", connection.ConnectionId, pod?.Name() ?? "<NOT FOUND>");
 
             connection.ConnectionClosed.Register(async () =>
             {
@@ -238,9 +241,10 @@ namespace KubeConnect.PortForwarding
 
             try
             {
+                logger.LogDebug("[{ConnectionID}] establishing connection to pod", connection.ConnectionId);
                 using var webSocket = await kubernetesClient.WebSocketNamespacedPodPortForwardAsync(pod.Name(), binding.Namespace, new int[] { binding.TargetPort }, "v4.channel.k8s.io");
-
-                var proxy = new PortForwardProxy(webSocket, connection.Transport);
+                logger.LogDebug("[{ConnectionID}] connected to pod", connection.ConnectionId);
+                var proxy = new PortForwardProxy(webSocket, connection, logger);
 
                 await proxy.Forward(connection.ConnectionClosed);
             }
@@ -289,12 +293,16 @@ namespace KubeConnect.PortForwarding
         private const int MAXFRAMESIZE = 15 * 1024 * 1024; // 15MB
         private readonly WebSocket webSocket;
         private readonly IDuplexPipe pipe;
+        private readonly string connectionId;
+        private readonly ILogger logger;
         private int bytesToSkip = 3;
 
-        public PortForwardProxy(WebSocket webSocket, IDuplexPipe pipe)
+        public PortForwardProxy(WebSocket webSocket, ConnectionContext connection, ILogger logger)
         {
             this.webSocket = webSocket;
-            this.pipe = pipe;
+            this.pipe = connection.Transport;
+            this.connectionId = connection.ConnectionId;
+            this.logger = logger;
         }
 
         public async Task Forward(CancellationToken cancellationToken)
@@ -316,6 +324,7 @@ namespace KubeConnect.PortForwarding
                     {
                         return;
                     }
+                    logger.LogDebug("[{ConnectionID}] bytes received from pod and sent to client", connectionId);
 
                     readTask = ReadFromWebsocket(cancellationToken);
                     tasks[0] = readTask.AsTask();
@@ -327,6 +336,7 @@ namespace KubeConnect.PortForwarding
                     {
                         return;
                     }
+                    logger.LogDebug("[{ConnectionID}] bytes received from client and sent to pod", connectionId);
                     writeTask = WriteOutToWebSocket(cancellationToken);
                     tasks[1] = writeTask.AsTask();
                 }

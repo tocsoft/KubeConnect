@@ -1,7 +1,8 @@
 {
   "profiles": {
     "KubeConnect": {
-      "commandName": "Project"
+        "commandName": "Project",
+        "commandLineArgs": "-trace-logs",
     },
     "KubeConnect - bridge": {
       "commandName": "Project",
