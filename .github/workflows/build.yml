@@ -17,6 +17,9 @@ jobs:
 
     runs-on: windows-latest
 
+    permissions:
+      id-token: write  # enable GitHub OIDC token issuance for this job
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -34,11 +37,19 @@ jobs:
           path: publish/packages/*.nupkg
           retention-days: 1
 
+          
+      - name: NuGet login (OIDC → temp API key)
+        if: (github.event_name == 'release' && github.event.action == 'created')
+        uses: NuGet/login@v1
+        id: login
+        with:
+          user: ${{ secrets.NUGET_USER }}
+          
       - name: Publish to nuget
-        if: ${{ github.event_name == 'release' }}
+        if: (github.event_name == 'release' && github.event.action == 'created')
         shell: pwsh
         run: |
           $files = Get-ChildItem ./publish/packages/ -name '*.nupkg'
           foreach ($file in $files){
-            dotnet nuget push "./publish/packages/$file" --api-key "${{ secrets.NUGET_API_KEY }}" --source "https://api.nuget.org/v3/index.json"  --skip-duplicate
+            dotnet nuget push "./publish/packages/$file" --api-key ${{steps.login.outputs.NUGET_API_KEY}} --source https://api.nuget.org/v3/index.json --skip-duplicate
           }
