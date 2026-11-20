@@ -1,10 +1,8 @@
 ﻿using Aspire.Hosting.ApplicationModel;
 using Aspire.Hosting.Lifecycle;
-using Humanizer.Localisation;
 using KubeConnect.Common;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using System.Net.Http;
 
 namespace Aspire.Hosting.KubeConnect;
 
@@ -109,7 +107,7 @@ public static class KubeConnectResourceExtensions
             throw new InvalidOperationException("A KubeConnect resource has already been added to this application");
         }
 
-        builder.Services.TryAddLifecycleHook<KubeConnectLifecyclehook>();
+        builder.Services.TryAddEventingSubscriber<KubeConnectLifecyclehook>();
         builder.Services.TryAddSingleton<KubeConnectManager>();
         builder.Services.AddHttpClient("kubCon")
             .AddTypedClient((c, sp) =>
